@@ -1,0 +1,112 @@
+#pragma once
+#include "BuildManager.h"
+#include "ThemeManager.h"
+
+#include <QMainWindow>
+
+class CodeEditor;
+class FindBar;
+class SearchPanel;
+class QAction;
+class QActionGroup;
+class QComboBox;
+class QDockWidget;
+class QFileSystemModel;
+class QLabel;
+class QMenu;
+class QPlainTextEdit;
+class QTabWidget;
+class QTreeView;
+class QTreeWidget;
+
+class MainWindow : public QMainWindow {
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+
+    void openFolder(const QString& path);
+    CodeEditor* openFile(const QString& path, int line = -1, int column = -1);
+    void restoreLastSession();
+
+protected:
+    void closeEvent(QCloseEvent* e) override;
+    void dragEnterEvent(QDragEnterEvent* e) override;
+    void dropEvent(QDropEvent* e) override;
+
+private:
+    // construction
+    void createActions();
+    void createMenus();
+    void createToolBar();
+    void createDocks();
+    void createStatusBar();
+
+    // documents
+    CodeEditor* currentEditor() const;
+    CodeEditor* newEditor();
+    void newFile();
+    bool saveEditor(CodeEditor* e, bool saveAs = false);
+    void saveAllModified();
+    bool maybeSave(CodeEditor* e);
+    void closeTab(int index);
+    void closeTabForPath(const QString& path);
+    void updateTabTitle(CodeEditor* e);
+
+    // ui state
+    void updateWindowTitle();
+    void updateStatus();
+    void updateBuildActions();
+    void updateRecentMenu();
+    void refreshStartupItems();
+    void applyEditorSettings();
+    void setTheme(ThemeManager::Id id);
+
+    // build
+    void appendOutput(const QString& text, BuildManager::Kind kind);
+    void addDiagnostic(const Diagnostic& d);
+    void onBuildStarted(const QString& title);
+    void onBuildFinished(int code, bool ok);
+    void runStartup();
+
+    // project tree
+    void showTreeContextMenu(const QPoint& pos);
+
+    // widgets
+    QTabWidget* m_tabs = nullptr;
+    FindBar* m_findBar = nullptr;
+    QTreeView* m_tree = nullptr;
+    QFileSystemModel* m_fs = nullptr;
+    QPlainTextEdit* m_output = nullptr;
+    QTreeWidget* m_errors = nullptr;
+    SearchPanel* m_search = nullptr;
+    QDockWidget* m_explorerDock = nullptr;
+    QDockWidget* m_outputDock = nullptr;
+    QDockWidget* m_errorDock = nullptr;
+    QDockWidget* m_searchDock = nullptr;
+    QComboBox* m_configCombo = nullptr;
+    QComboBox* m_startupCombo = nullptr;
+    QLabel* m_posLabel = nullptr;
+    QLabel* m_eolLabel = nullptr;
+    QLabel* m_encLabel = nullptr;
+    QMenu* m_recentMenu = nullptr;
+    QActionGroup* m_themeGroup = nullptr;
+
+    // actions
+    QAction *m_actNew = nullptr, *m_actOpenFile = nullptr, *m_actOpenFolder = nullptr,
+            *m_actSave = nullptr, *m_actSaveAs = nullptr, *m_actSaveAll = nullptr,
+            *m_actClose = nullptr, *m_actExit = nullptr;
+    QAction *m_actUndo = nullptr, *m_actRedo = nullptr, *m_actCut = nullptr, *m_actCopy = nullptr,
+            *m_actPaste = nullptr, *m_actSelectAll = nullptr, *m_actFind = nullptr,
+            *m_actReplace = nullptr, *m_actFindInFiles = nullptr, *m_actGoTo = nullptr,
+            *m_actComment = nullptr;
+    QAction *m_actConfigure = nullptr, *m_actBuild = nullptr, *m_actRebuild = nullptr,
+            *m_actClean = nullptr, *m_actStop = nullptr, *m_actRun = nullptr;
+    QAction *m_actSettings = nullptr, *m_actAbout = nullptr, *m_actZoomIn = nullptr,
+            *m_actZoomOut = nullptr, *m_actZoomReset = nullptr, *m_actThemeDark = nullptr,
+            *m_actThemeLight = nullptr;
+
+    BuildManager* m_build = nullptr;
+    QString m_root;
+    int m_untitledCounter = 0;
+    bool m_runAfterBuild = false;
+};
