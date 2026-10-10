@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(ForgeIDE
-    VERSION 0.1.0
-    DESCRIPTION "Forge - a lightweight cross-platform C++ IDE built on Qt 6"
+project(CrucibleCode
+    VERSION 0.3.0
+    DESCRIPTION "CrucibleCode - a lightweight cross-platform IDE for C, C++ and C# built on Qt 6"
     LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -10,22 +10,22 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(FORGE_USE_KSYNTAX
+option(CRUCIBLE_USE_KSYNTAX
        "Use KSyntaxHighlighting (MIT) for syntax highlighting when it is installed" ON)
 
 find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
 qt_standard_project_setup()
 
-set(FORGE_HAVE_KSYNTAX OFF)
-if(FORGE_USE_KSYNTAX)
+set(CRUCIBLE_HAVE_KSYNTAX OFF)
+if(CRUCIBLE_USE_KSYNTAX)
     find_package(KF6SyntaxHighlighting QUIET)
     if(KF6SyntaxHighlighting_FOUND)
-        set(FORGE_HAVE_KSYNTAX ON)
+        set(CRUCIBLE_HAVE_KSYNTAX ON)
     endif()
 endif()
-message(STATUS "KSyntaxHighlighting: ${FORGE_HAVE_KSYNTAX}")
+message(STATUS "KSyntaxHighlighting: ${CRUCIBLE_HAVE_KSYNTAX}")
 
-qt_add_executable(forge WIN32 MACOSX_BUNDLE
+qt_add_executable(cruciblecode WIN32 MACOSX_BUNDLE
     src/main.cpp
     src/MainWindow.h        src/MainWindow.cpp
     src/CodeEditor.h        src/CodeEditor.cpp
@@ -35,37 +35,78 @@ qt_add_executable(forge WIN32 MACOSX_BUNDLE
     src/FindBar.h           src/FindBar.cpp
     src/SearchPanel.h       src/SearchPanel.cpp
     src/SettingsDialog.h    src/SettingsDialog.cpp
+    src/PtyProcess.h        src/PtyProcess.cpp
+    src/TerminalScreen.h    src/TerminalScreen.cpp
+    src/TerminalView.h      src/TerminalView.cpp
+    src/TerminalPanel.h     src/TerminalPanel.cpp
+    src/QuickOpenDialog.h   src/QuickOpenDialog.cpp
 )
 
-target_link_libraries(forge PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
-target_compile_definitions(forge PRIVATE FORGE_VERSION="${PROJECT_VERSION}")
+target_link_libraries(cruciblecode PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
 
-if(FORGE_HAVE_KSYNTAX)
-    target_link_libraries(forge PRIVATE KF6::SyntaxHighlighting)
-    target_compile_definitions(forge PRIVATE FORGE_HAVE_KSYNTAX)
+# ---- logo / icons -----------------------------------------------------------
+qt_add_resources(cruciblecode "app_icons"
+    PREFIX "/icons"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons"
+    FILES
+        resources/icons/icon-16.png  resources/icons/icon-24.png  resources/icons/icon-32.png
+        resources/icons/icon-48.png  resources/icons/icon-64.png  resources/icons/icon-128.png
+        resources/icons/icon-256.png resources/icons/icon-512.png)
+
+if(WIN32)
+    target_sources(cruciblecode PRIVATE resources/app.rc)       # exe icon in Explorer / taskbar
+endif()
+if(APPLE)
+    set(CRUCIBLE_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/resources/icons/icon.icns")
+    target_sources(cruciblecode PRIVATE ${CRUCIBLE_ICNS})
+    set_source_files_properties(${CRUCIBLE_ICNS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    set_target_properties(cruciblecode PROPERTIES MACOSX_BUNDLE_ICON_FILE icon.icns)
+endif()
+target_compile_definitions(cruciblecode PRIVATE CRUCIBLE_VERSION="${PROJECT_VERSION}")
+
+# forkpty() lives in libutil on Linux (merged into libc since glibc 2.34)
+if(UNIX AND NOT APPLE)
+    find_library(CRUCIBLE_UTIL_LIB util)
+    if(CRUCIBLE_UTIL_LIB)
+        target_link_libraries(cruciblecode PRIVATE ${CRUCIBLE_UTIL_LIB})
+    endif()
+endif()
+
+if(CRUCIBLE_HAVE_KSYNTAX)
+    target_link_libraries(cruciblecode PRIVATE KF6::SyntaxHighlighting)
+    target_compile_definitions(cruciblecode PRIVATE CRUCIBLE_HAVE_KSYNTAX)
 endif()
 
 if(MSVC)
-    target_compile_options(forge PRIVATE /W4 /utf-8 /permissive-)
+    target_compile_options(cruciblecode PRIVATE /W4 /utf-8 /permissive-)
 else()
-    target_compile_options(forge PRIVATE -Wall -Wextra)
+    target_compile_options(cruciblecode PRIVATE -Wall -Wextra)
 endif()
 
-set_target_properties(forge PROPERTIES
-    MACOSX_BUNDLE_BUNDLE_NAME "Forge"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "org.forgeide.forge"
+set_target_properties(cruciblecode PROPERTIES
+    OUTPUT_NAME "CrucibleCode"
+    MACOSX_BUNDLE_BUNDLE_NAME "CrucibleCode"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "org.cruciblecode.app"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
 
 # ---- install / deploy -------------------------------------------------------
-install(TARGETS forge
+install(TARGETS cruciblecode
     BUNDLE  DESTINATION .
     RUNTIME DESTINATION bin)
 
+if(UNIX AND NOT APPLE)
+    install(FILES resources/cruciblecode.desktop DESTINATION share/applications)
+    foreach(sz 16 24 32 48 64 128 256 512)
+        install(FILES resources/icons/icon-${sz}.png
+                DESTINATION share/icons/hicolor/${sz}x${sz}/apps RENAME cruciblecode.png)
+    endforeach()
+endif()
+
 if(Qt6_VERSION VERSION_GREATER_EQUAL 6.5)
     qt_generate_deploy_app_script(
-        TARGET forge
-        OUTPUT_SCRIPT forge_deploy_script
+        TARGET cruciblecode
+        OUTPUT_SCRIPT cruciblecode_deploy_script
         NO_UNSUPPORTED_PLATFORM_ERROR)
-    install(SCRIPT ${forge_deploy_script})
+    install(SCRIPT ${cruciblecode_deploy_script})
 endif()

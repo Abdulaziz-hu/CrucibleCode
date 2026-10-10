@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=CrucibleCode
+GenericName=Code Editor
+Comment=Lightweight IDE for C, C++ and C#
+Exec=CrucibleCode %F
+Icon=cruciblecode
+Terminal=false
+Categories=Development;IDE;TextEditor;
+MimeType=text/plain;text/x-c;text/x-c++;text/x-chdr;text/x-c++hdr;text/x-csharp;text/markdown;
+StartupWMClass=CrucibleCode

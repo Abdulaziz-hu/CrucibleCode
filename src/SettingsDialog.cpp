@@ -1,6 +1,7 @@
 #include "SettingsDialog.h"
 #include "ThemeManager.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFontComboBox>
@@ -30,6 +31,16 @@ QFont SettingsDialog::editorFont()
     return f;
 }
 
+bool SettingsDialog::showHiddenFiles()
+{
+    return QSettings().value(QStringLiteral("explorer/showHidden"), true).toBool();
+}
+
+int SettingsDialog::tabSize()
+{
+    return qBound(1, QSettings().value(QStringLiteral("editor/tabSize"), 4).toInt(), 16);
+}
+
 SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
 {
     setWindowTitle(tr("Settings"));
@@ -54,6 +65,15 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
     m_fontSize->setRange(6, 40);
     m_fontSize->setValue(editorFont().pointSize());
     form->addRow(tr("Font size:"), m_fontSize);
+
+    m_tabSize = new QSpinBox;
+    m_tabSize->setRange(1, 16);
+    m_tabSize->setValue(tabSize());
+    form->addRow(tr("Tab size (spaces):"), m_tabSize);
+
+    m_hidden = new QCheckBox(tr("Show hidden files in the Explorer (.gitignore, .env, ...)"));
+    m_hidden->setChecked(showHiddenFiles());
+    form->addRow(QString(), m_hidden);
 
     m_cmake = new QLineEdit(s.value(QStringLiteral("cmake/path")).toString());
     m_cmake->setPlaceholderText(tr("cmake (found on PATH)"));
@@ -81,6 +101,8 @@ void SettingsDialog::accept()
     QSettings s;
     s.setValue(QStringLiteral("editor/fontFamily"), m_font->currentFont().family());
     s.setValue(QStringLiteral("editor/fontSize"), m_fontSize->value());
+    s.setValue(QStringLiteral("editor/tabSize"), m_tabSize->value());
+    s.setValue(QStringLiteral("explorer/showHidden"), m_hidden->isChecked());
     s.setValue(QStringLiteral("cmake/path"), m_cmake->text().trimmed());
     s.setValue(QStringLiteral("cmake/generator"), m_generator->text().trimmed());
     s.setValue(QStringLiteral("cmake/extraArgs"), m_extra->text());

@@ -5,6 +5,11 @@
 
 class QProcess;
 
+struct StartupItem {
+    QString name;   // shown in the toolbar combo box
+    QString path;   // executable (CMake) or project file (.NET)
+};
+
 struct Diagnostic {
     enum Severity { Error, Warning, Note };
     Severity severity = Error;
@@ -21,12 +26,15 @@ class BuildManager : public QObject {
     Q_OBJECT
 public:
     enum Kind { Normal, Info, Warning, Error, Success };
+    enum ProjectKind { NoProject, CMakeProject, DotNetProject };
 
     explicit BuildManager(QObject* parent = nullptr);
 
     void setProjectRoot(const QString& root);
     QString projectRoot() const { return m_root; }
-    bool hasProject() const;
+    bool hasProject() const { return m_kind != NoProject; }
+    ProjectKind projectKind() const { return m_kind; }
+    QString projectKindName() const;
 
     void setConfiguration(const QString& c) { m_config = c; }
     QString configuration() const { return m_config; }
@@ -36,7 +44,9 @@ public:
 
     QString buildDir() const;
     QString buildRoot() const;
-    QStringList findExecutables() const;   // absolute paths inside the build dir
+    // CMake: executable targets (CMake File API once configured, add_executable() scan before that,
+    // plus executables found in the build folder). .NET: *.csproj files.
+    QList<StartupItem> startupItems() const;
 
     bool isBusy() const;                   // building or running
 
@@ -62,6 +72,11 @@ private:
     };
 
     Step configureStep() const;
+    QString dotnetTarget() const;
+    void ensureFileApiQuery() const;
+    QList<StartupItem> fileApiTargets() const;
+    QList<StartupItem> scanCMakeLists() const;
+    QString resolveExecutable(const QString& path) const;
     Step buildStep(const QString& target = {}, bool cleanFirst = false) const;
     bool needsConfigure() const;
     void begin(const QList<Step>& steps);
@@ -76,6 +91,7 @@ private:
     QQueue<Step> m_queue;
     QString m_outBuf, m_errBuf, m_runOutBuf, m_runErrBuf;
     QString m_root;
+    ProjectKind m_kind = NoProject;
     QString m_config = QStringLiteral("Debug");
     QString m_cmake = QStringLiteral("cmake");
     QString m_generator;

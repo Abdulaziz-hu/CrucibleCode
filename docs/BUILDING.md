@@ -1,4 +1,19 @@
-# Building Forge IDE
+# Building CrucibleCode
+
+## The easy way: setup scripts
+
+`setup.sh` (Linux/macOS) and `setup.cmd` / `scripts\setup.ps1` (Windows) install the missing tools, build and start
+CrucibleCode. See the README for options. What they install:
+
+* **Windows:** Microsoft C++ Build Tools (winget, asks for UAC), Python 3 if needed; CMake, Ninja and `aqtinstall`
+  go into a private virtual environment under `%LOCALAPPDATA%\CrucibleCode`, Qt 6.7.3 (MSVC 64-bit) into `%USERPROFILE%\Qt`.
+  Qt DLLs are copied next to the exe with `windeployqt`.
+* **Ubuntu / Debian, Fedora, Arch, openSUSE, Alpine:** compiler, CMake, Ninja, git, Qt 6 development packages through the
+  system package manager (`sudo`). If the distribution's Qt is older than 6.4 (Ubuntu 22.04), Qt 6.7.3 is downloaded
+  with `aqtinstall` into `~/Qt` instead.
+* **macOS:** Xcode command line tools, Homebrew (if missing), then `cmake ninja git qt`.
+
+## Manual steps
 
 Requirements everywhere: **Qt 6.4+** (Core, Gui, Widgets), **CMake 3.21+**, a **C++20** compiler.
 Optional: KSyntaxHighlighting (`KF6SyntaxHighlighting`) for 300+ languages of highlighting.
@@ -10,7 +25,7 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release [-DCMAKE_PREFIX_PATH=<Qt
 cmake --build build --parallel
 ```
 
-`-DFORGE_USE_KSYNTAX=OFF` skips KSyntaxHighlighting even if it is installed.
+`-DCRUCIBLE_USE_KSYNTAX=OFF` skips KSyntaxHighlighting even if it is installed.
 
 ---
 
@@ -27,10 +42,10 @@ sudo apt install build-essential cmake ninja-build git \
 # optional, richer syntax highlighting (package may not exist on older releases):
 sudo apt install libkf6syntaxhighlighting-dev
 
-git clone <your repo> forge-ide && cd forge-ide    # or unzip forge-ide.zip
+git clone <your repo> cruciblecode && cd cruciblecode    # or unzip cruciblecode.zip
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-./build/forge ~/path/to/a/cmake/project
+./build/CrucibleCode ~/path/to/a/cmake/project
 ```
 
 Install system-wide (optional): `sudo cmake --install build --prefix /usr/local`
@@ -50,7 +65,7 @@ sudo dnf install qt6-qtwayland
 
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
-./build/forge
+./build/CrucibleCode
 ```
 
 Fedora's Qt 6 is found automatically; no `CMAKE_PREFIX_PATH` is needed. If CMake cannot find it,
@@ -65,17 +80,17 @@ brew install cmake ninja qt
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
 cmake --build build --parallel
-open build/forge.app                   # or: build/forge.app/Contents/MacOS/forge ~/my/project
+open build/CrucibleCode.app            # or: build/CrucibleCode.app/Contents/MacOS/CrucibleCode ~/my/project
 ```
 
 Make a distributable app / disk image:
 
 ```bash
-"$(brew --prefix qt)/bin/macdeployqt" build/forge.app -dmg
+"$(brew --prefix qt)/bin/macdeployqt" build/CrucibleCode.app -dmg
 ```
 
 Unsigned builds are blocked by Gatekeeper on other Macs: right-click > Open the first time, or run
-`xattr -dr com.apple.quarantine forge.app`. Public distribution needs an Apple Developer ID
+`xattr -dr com.apple.quarantine CrucibleCode.app`. Public distribution needs an Apple Developer ID
 (codesign + notarization). Rendering uses Metal automatically.
 
 ## Windows
@@ -86,8 +101,8 @@ Install Qt (MSVC 2022 64-bit kit) from the Qt Online Installer, plus Visual Stud
 ```powershell
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=C:\Qt\6.7.3\msvc2022_64
 cmake --build build
-cmake --install build --prefix dist      # copies Qt DLLs/plugins next to forge.exe (Qt >= 6.5)
-dist\bin\forge.exe
+cmake --install build --prefix dist      # copies Qt DLLs/plugins next to CrucibleCode.exe (Qt >= 6.5)
+dist\bin\CrucibleCode.exe
 ```
 
 Rendering uses Direct3D 11 by default.
@@ -102,15 +117,27 @@ Rendering uses Direct3D 11 by default.
 | Linux | OpenGL | `--gpu-backend=vulkan` |
 | macOS | Metal | none |
 
-`forge --no-gpu` turns GPU compositing off (use it for broken drivers, VMs, remote desktops).
+`CrucibleCode --no-gpu` turns GPU compositing off (use it for broken drivers, VMs, remote desktops).
 
 ## Linux display server
 
-Forge picks Wayland or X11 automatically. Force one with `QT_QPA_PLATFORM=xcb ./build/forge` or
-`QT_QPA_PLATFORM=wayland ./build/forge`.
+CrucibleCode picks Wayland or X11 automatically. Force one with `QT_QPA_PLATFORM=xcb ./build/CrucibleCode` or
+`QT_QPA_PLATFORM=wayland ./build/CrucibleCode`.
 
-## Using Forge with its own build tools
+## Run-time tools
 
-Forge only drives the `cmake` executable. It must be on `PATH` (or set under *Tools > Settings*),
+CrucibleCode only drives the `cmake` executable. It must be on `PATH` (or set under *Tools > Settings*),
 and your compiler must be reachable from that shell: `g++`/`clang++` on Linux and macOS; on Windows
-start Forge from a Developer Command Prompt (or set the generator to *Visual Studio 17 2022*).
+start CrucibleCode from a Developer Command Prompt (or set the generator to *Visual Studio 17 2022*).
+
+## Run-time tools for your own projects
+
+* **C / C++:** `cmake`, a compiler and (optionally) Ninja on `PATH`.
+* **C#:** the .NET SDK (`dotnet`): Ubuntu `sudo apt install dotnet-sdk-8.0`, Fedora `sudo dnf install dotnet-sdk-8.0`,
+  macOS `brew install --cask dotnet-sdk`, Windows `winget install Microsoft.DotNet.SDK.8`.
+
+## Integrated terminal requirements
+
+* Linux / macOS: nothing extra (uses `forkpty`; links `libutil` on older glibc automatically).
+* Windows: **Windows 10 version 1809 or newer** (ConPTY). PowerShell 7, Windows PowerShell, Command Prompt,
+  Git Bash and WSL are detected automatically.

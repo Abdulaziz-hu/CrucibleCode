@@ -12,10 +12,14 @@ class QActionGroup;
 class QComboBox;
 class QDockWidget;
 class QFileSystemModel;
+class QFileSystemWatcher;
 class QLabel;
 class QMenu;
 class QPlainTextEdit;
 class QTabWidget;
+class QTextBrowser;
+class QTimer;
+class TerminalPanel;
 class QTreeView;
 class QTreeWidget;
 
@@ -32,6 +36,7 @@ protected:
     void closeEvent(QCloseEvent* e) override;
     void dragEnterEvent(QDragEnterEvent* e) override;
     void dropEvent(QDropEvent* e) override;
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
 
 private:
     // construction
@@ -68,6 +73,23 @@ private:
     void onBuildFinished(int code, bool ok);
     void runStartup();
 
+    // sessions / panels / misc
+    bool closeAllEditors();
+    static QString sessionKey(const QString& root);
+    void saveSession();
+    void restoreSession();
+    bool resetDockAt(const QPoint& pos);
+    void resetDockSize(QDockWidget* dock);
+    void resetPanelSizes();
+    void updateMarkdownPreview();
+    void showAbout();
+    void quickOpen();
+    void applyExplorerFilter();
+    void watchEditor(CodeEditor* e);
+    void unwatchEditor(CodeEditor* e);
+    void onExternalChange(const QString& path);
+    void showTabContextMenu(const QPoint& pos);
+
     // project tree
     void showTreeContextMenu(const QPoint& pos);
 
@@ -90,6 +112,16 @@ private:
     QLabel* m_encLabel = nullptr;
     QMenu* m_recentMenu = nullptr;
     QActionGroup* m_themeGroup = nullptr;
+    QFileSystemWatcher* m_watcher = nullptr;
+    QAction* m_actQuickOpen = nullptr;
+    TerminalPanel* m_terminals = nullptr;
+    QDockWidget* m_terminalDock = nullptr;
+    QDockWidget* m_mdDock = nullptr;
+    QTextBrowser* m_mdView = nullptr;
+    QTimer* m_mdTimer = nullptr;
+    QAction *m_actNewTerminal = nullptr, *m_actToggleTerminal = nullptr, *m_actCloseTerminal = nullptr,
+            *m_actCloseAllTerminals = nullptr, *m_actWordWrap = nullptr, *m_actMdPreview = nullptr,
+            *m_actResetLayout = nullptr;
 
     // actions
     QAction *m_actNew = nullptr, *m_actOpenFile = nullptr, *m_actOpenFolder = nullptr,

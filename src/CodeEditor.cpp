@@ -11,14 +11,32 @@
 #include <QKeyEvent>
 #include <QPainter>
 #include <QSaveFile>
+#include <QScrollBar>
 #include <QTextCursor>
 
-#ifdef FORGE_HAVE_KSYNTAX
+#ifdef CRUCIBLE_HAVE_KSYNTAX
 #include <KSyntaxHighlighting/Definition>
 #include <KSyntaxHighlighting/Repository>
 #include <KSyntaxHighlighting/SyntaxHighlighter>
 #include <KSyntaxHighlighting/Theme>
 #endif
+
+#ifdef CRUCIBLE_HAVE_KSYNTAX
+static KSyntaxHighlighting::Repository& syntaxRepository()
+{
+    static KSyntaxHighlighting::Repository repo;
+    return repo;
+}
+#endif
+
+int CodeEditor::syntaxDefinitionCount()
+{
+#ifdef CRUCIBLE_HAVE_KSYNTAX
+    return int(syntaxRepository().definitions().size());
+#else
+    return 0;
+#endif
+}
 
 class LineNumberArea : public QWidget {
 public:
@@ -58,10 +76,41 @@ QString CodeEditor::displayName() const
     return m_path.isEmpty() ? m_untitled : QFileInfo(m_path).fileName();
 }
 
+void CodeEditor::setTabSize(int n)
+{
+    m_tabSize = qBound(1, n, 16);
+    setTabStopDistance(m_tabSize * QFontMetricsF(font()).horizontalAdvance(QLatin1Char(' ')));
+}
+
+bool CodeEditor::reloadFile(QString* error)
+{
+    const int pos = textCursor().position();
+    const int scroll = verticalScrollBar()->value();
+    const QString path = m_path;
+    if (!loadFile(path, error)) return false;
+    QTextCursor c(document());
+    c.setPosition(qMin(pos, qMax(0, document()->characterCount() - 1)));
+    setTextCursor(c);
+    verticalScrollBar()->setValue(scroll);
+    return true;
+}
+
+void CodeEditor::setWordWrap(bool on)
+{
+    setLineWrapMode(on ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+}
+
+bool CodeEditor::isMarkdown() const
+{
+    const QString ext = QFileInfo(m_path).suffix().toLower();
+    return ext == QLatin1String("md") || ext == QLatin1String("markdown") || ext == QLatin1String("mdown")
+        || ext == QLatin1String("mkd") || ext == QLatin1String("mdx");
+}
+
 void CodeEditor::setEditorFont(const QFont& f)
 {
     setFont(f);
-    setTabStopDistance(4 * QFontMetricsF(f).horizontalAdvance(QLatin1Char(' ')));
+    setTabStopDistance(m_tabSize * QFontMetricsF(f).horizontalAdvance(QLatin1Char(' ')));
     updateLineNumberAreaWidth();
     m_gutter->update();
 }
@@ -108,9 +157,9 @@ void CodeEditor::updateHighlighter()
     delete m_highlighter;
     m_highlighter = nullptr;
 
-#ifdef FORGE_HAVE_KSYNTAX
+#ifdef CRUCIBLE_HAVE_KSYNTAX
     if (!m_path.isEmpty()) {
-        static KSyntaxHighlighting::Repository repo;
+        KSyntaxHighlighting::Repository& repo = syntaxRepository();
         const auto def = repo.definitionForFileName(m_path);
         if (def.isValid()) {
             auto* h = new KSyntaxHighlighting::SyntaxHighlighter(document());
@@ -149,6 +198,7 @@ bool CodeEditor::loadFile(const QString& path, QString* error)
     configureLanguage();
     setPlainText(QString::fromUtf8(data));
     document()->setModified(false);
+    m_diskTime = QFileInfo(m_path).lastModified();
     updateHighlighter();
     moveCursor(QTextCursor::Start);
     return true;
@@ -177,6 +227,7 @@ bool CodeEditor::saveFile(const QString& path, QString* error)
         updateHighlighter();
     }
     document()->setModified(false);
+    m_diskTime = QFileInfo(m_path).lastModified();
     return true;
 }
 
@@ -254,14 +305,50 @@ void CodeEditor::lineNumberAreaPaintEvent(QPaintEvent* event)
 
 void CodeEditor::highlightCurrentLine()
 {
+    const ThemeColors& tc = ThemeManager::instance().colors();
     QList<QTextEdit::ExtraSelection> extras;
     if (!isReadOnly()) {
         QTextEdit::ExtraSelection sel;
-        sel.format.setBackground(ThemeManager::instance().colors().lineHighlight);
+        sel.format.setBackground(tc.lineHighlight);
         sel.format.setProperty(QTextFormat::FullWidthSelection, true);
         sel.cursor = textCursor();
         sel.cursor.clearSelection();
         extras.append(sel);
+    }
+
+    // Bracket matching: the bracket before or after the caret and its partner.
+    QTextDocument* doc = document();
+    const int pos = textCursor().position();
+    const int count = doc->characterCount();
+    const auto charAt = [&](int p) { return (p >= 0 && p < count) ? doc->characterAt(p) : QChar(); };
+    static const QString opens = QStringLiteral("([{"), closes = QStringLiteral(")]}");
+    const auto isBracket = [&](QChar c) { return !c.isNull() && (opens.contains(c) || closes.contains(c)); };
+
+    int at = -1;
+    if (isBracket(charAt(pos))) at = pos;
+    else if (isBracket(charAt(pos - 1))) at = pos - 1;
+    if (at >= 0) {
+        const QChar b = charAt(at);
+        const bool forward = opens.contains(b);
+        const QChar mate = forward ? closes.at(int(opens.indexOf(b))) : opens.at(int(closes.indexOf(b)));
+        const int step = forward ? 1 : -1;
+        int depth = 0, match = -1;
+        for (int i = at, n = 0; i >= 0 && i < count && n < 200000; i += step, ++n) {
+            const QChar ch = charAt(i);
+            if (ch == b) ++depth;
+            else if (ch == mate && --depth == 0) { match = i; break; }
+        }
+        const auto mark = [&](int p, bool ok) {
+            QTextEdit::ExtraSelection s;
+            s.cursor = QTextCursor(doc);
+            s.cursor.setPosition(p);
+            s.cursor.setPosition(p + 1, QTextCursor::KeepAnchor);
+            if (ok) s.format.setBackground(tc.selection);
+            else s.format.setForeground(tc.error);
+            extras.append(s);
+        };
+        mark(at, match >= 0);
+        if (match >= 0) mark(match, true);
     }
     setExtraSelections(extras);
 }
@@ -288,12 +375,12 @@ void CodeEditor::indentSelection(bool unindent)
     for (QTextBlock b = first; b.isValid(); b = b.next()) {
         QTextCursor bc(b);
         if (!unindent) {
-            if (!b.text().isEmpty()) bc.insertText(QStringLiteral("    "));
+            if (!b.text().isEmpty()) bc.insertText(QString(m_tabSize, QLatin1Char(' ')));
         } else {
             const QString t = b.text();
             int n = 0;
             if (t.startsWith(QLatin1Char('\t'))) n = 1;
-            else while (n < 4 && n < t.size() && t.at(n) == QLatin1Char(' ')) ++n;
+            else while (n < m_tabSize && n < t.size() && t.at(n) == QLatin1Char(' ')) ++n;
             if (n > 0) {
                 bc.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, n);
                 bc.removeSelectedText();
@@ -349,6 +436,80 @@ void CodeEditor::toggleComment()
     edit.endEditBlock();
 }
 
+void CodeEditor::moveLines(bool up)
+{
+    QTextBlock first, last;
+    selectedBlocks(&first, &last);
+    const QTextBlock neighbor = up ? first.previous() : last.next();
+    if (!neighbor.isValid()) return;
+
+    const int rangeStart = first.position();
+    const int rangeEnd = last.position() + last.length() - 1;
+    QTextCursor r(document());
+    r.setPosition(rangeStart);
+    r.setPosition(rangeEnd, QTextCursor::KeepAnchor);
+    QString rangeText = r.selectedText();
+    rangeText.replace(QChar(0x2029), QLatin1Char('\n'));
+    const QString nb = neighbor.text();
+
+    const int regionStart = up ? neighbor.position() : rangeStart;
+    const int regionEnd = up ? rangeEnd : neighbor.position() + neighbor.length() - 1;
+    const QString replacement = up ? rangeText + QLatin1Char('\n') + nb : nb + QLatin1Char('\n') + rangeText;
+    const int newStart = up ? regionStart : regionStart + int(nb.size()) + 1;
+
+    QTextCursor e(document());
+    e.beginEditBlock();
+    e.setPosition(regionStart);
+    e.setPosition(regionEnd, QTextCursor::KeepAnchor);
+    e.insertText(replacement);
+    e.endEditBlock();
+
+    QTextCursor sel(document());
+    sel.setPosition(newStart);
+    sel.setPosition(newStart + int(rangeText.size()), QTextCursor::KeepAnchor);
+    setTextCursor(sel);
+}
+
+void CodeEditor::duplicateLines(bool down)
+{
+    QTextBlock first, last;
+    selectedBlocks(&first, &last);
+    const int rangeStart = first.position();
+    const int rangeEnd = last.position() + last.length() - 1;
+    QTextCursor r(document());
+    r.setPosition(rangeStart);
+    r.setPosition(rangeEnd, QTextCursor::KeepAnchor);
+    QString text = r.selectedText();
+    text.replace(QChar(0x2029), QLatin1Char('\n'));
+
+    QTextCursor e(document());
+    e.beginEditBlock();
+    if (down) {
+        e.setPosition(rangeEnd);
+        e.insertText(QLatin1Char('\n') + text);
+    } else {
+        e.setPosition(rangeStart);
+        e.insertText(text + QLatin1Char('\n'));
+    }
+    e.endEditBlock();
+}
+
+void CodeEditor::deleteLines()
+{
+    QTextBlock first, last;
+    selectedBlocks(&first, &last);
+    int from = first.position();
+    int to = last.position() + last.length() - 1;      // end of last line (without its newline)
+    if (last.next().isValid()) to = last.next().position();   // take the newline after the lines
+    else if (first.previous().isValid()) from = first.position() - 1;   // last line: take the newline before
+    QTextCursor c(document());
+    c.beginEditBlock();
+    c.setPosition(from);
+    c.setPosition(to, QTextCursor::KeepAnchor);
+    c.removeSelectedText();
+    c.endEditBlock();
+}
+
 void CodeEditor::smartNewline()
 {
     QTextCursor c = textCursor();
@@ -370,7 +531,7 @@ void CodeEditor::smartNewline()
                            || after.startsWith(QLatin1Char(']'));
 
     c.beginEditBlock();
-    c.insertText(QLatin1Char('\n') + indent + (open ? QStringLiteral("    ") : QString()));
+    c.insertText(QLatin1Char('\n') + indent + (open ? QString(m_tabSize, QLatin1Char(' ')) : QString()));
     if (open && closeFollows) {
         const int p = c.position();
         c.insertText(QLatin1Char('\n') + indent);
@@ -384,13 +545,27 @@ void CodeEditor::smartNewline()
 void CodeEditor::keyPressEvent(QKeyEvent* e)
 {
     const bool plain = !(e->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier));
+    const Qt::KeyboardModifiers mods = e->modifiers();
+    const bool onlyAlt = (mods & Qt::AltModifier) && !(mods & (Qt::ControlModifier | Qt::MetaModifier));
+
+    if (!isReadOnly()) {
+        if (onlyAlt && (e->key() == Qt::Key_Up || e->key() == Qt::Key_Down)) {
+            if (mods & Qt::ShiftModifier) duplicateLines(e->key() == Qt::Key_Down);   // Shift+Alt+Up/Down
+            else moveLines(e->key() == Qt::Key_Up);                                  // Alt+Up/Down
+            return;
+        }
+        if ((mods & Qt::ControlModifier) && (mods & Qt::ShiftModifier) && e->key() == Qt::Key_K) {
+            deleteLines();                                                           // Ctrl+Shift+K
+            return;
+        }
+    }
 
     if (e->key() == Qt::Key_Tab && plain) {
         const QTextCursor c = textCursor();
         if (c.hasSelection() && document()->findBlock(c.selectionStart()) != document()->findBlock(c.selectionEnd()))
             indentSelection(false);
         else
-            insertPlainText(QString(4 - c.positionInBlock() % 4, QLatin1Char(' ')));
+            insertPlainText(QString(m_tabSize - c.positionInBlock() % m_tabSize, QLatin1Char(' ')));
         return;
     }
     if (e->key() == Qt::Key_Backtab) {

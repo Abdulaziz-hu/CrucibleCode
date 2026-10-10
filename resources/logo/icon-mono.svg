@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" fill="currentColor" role="img" aria-label="CrucibleCode">
+  <title>CrucibleCode</title>
+  <g transform="translate(0 8)">
+    <polygon points="128,34 150,70 128,106 106,70"/>
+    <polygon points="176,52 184,66 176,80 168,66"/>
+    <rect x="52" y="118" width="152" height="14"/>
+    <polygon points="64,132 192,132 166,196 90,196"/>
+    <rect x="106" y="196" width="44" height="12"/>
+  </g>
+</svg>

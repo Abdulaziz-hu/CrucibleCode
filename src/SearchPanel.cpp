@@ -79,13 +79,13 @@ void SearchPanel::runSearch()
     m_go->setText(tr("Stop"));
 
     const Qt::CaseSensitivity cs = m_case->isChecked() ? Qt::CaseSensitive : Qt::CaseInsensitive;
-    static const QStringList skipDirs = {".git", ".svn", ".hg", "node_modules", "CMakeFiles", ".vs", ".idea"};
+    static const QStringList skipDirs = {".git", ".svn", ".hg", "node_modules", "CMakeFiles", ".vs", ".idea", "obj"};
     constexpr int kMaxResults = 5000;
     constexpr qint64 kMaxFileSize = 2 * 1024 * 1024;
     int files = 0, hits = 0;
 
     const auto scan = [&](auto&& self, const QString& dir) -> void {
-        const QFileInfoList entries = QDir(dir).entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+        const QFileInfoList entries = QDir(dir).entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden);
         for (const QFileInfo& fi : entries) {
             if (m_cancel || hits >= kMaxResults) return;
             if (fi.isDir()) {

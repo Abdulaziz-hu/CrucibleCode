@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 380 80" width="380" height="80" role="img" aria-label="CrucibleCode">
+  <title>CrucibleCode</title>
+  <g transform="scale(0.3125)">
+    <rect width="256" height="256" fill="#007ACC"/>
+    <g transform="translate(0 8)">
+      <polygon points="128,34 150,70 128,106 106,70" fill="#FFB02E"/>
+      <polygon points="176,52 184,66 176,80 168,66" fill="#FFD479"/>
+      <rect x="52" y="118" width="152" height="14" fill="#FFFFFF"/>
+      <polygon points="64,132 192,132 166,196 90,196" fill="#FFFFFF"/>
+      <rect x="106" y="196" width="44" height="12" fill="#FFFFFF"/>
+    </g>
+  </g>
+  <text x="98" y="54" font-family="'Segoe UI','Helvetica Neue',Helvetica,Arial,sans-serif" font-size="38" font-weight="600" letter-spacing="-0.5" fill="currentColor">Crucible<tspan fill="#007ACC">Code</tspan></text>
+</svg>

@@ -96,7 +96,8 @@ QString ThemeManager::buildStyleSheet() const
 * { border-radius: 0px; }
 QMainWindow, QDialog { background: %window%; color: %text%; }
 QWidget { color: %text%; }
-QMainWindow::separator { background: %border%; width: 1px; height: 1px; }
+QMainWindow::separator { background: %window%; width: 4px; height: 4px; }
+QMainWindow::separator:hover { background: %accent%; }
 QSplitter::handle { background: %border%; }
 QToolTip { background: %panel%; color: %text%; border: 1px solid %border%; padding: 2px 4px; }
 
@@ -153,7 +154,6 @@ QTabBar::tab:bottom { border-top: 0px; border-bottom: 2px solid transparent; }
 QTabBar::tab:bottom:selected { border-bottom: 2px solid %accent%; }
 
 /* ---- docks ---- */
-QDockWidget { titlebar-close-icon: none; titlebar-normal-icon: none; }
 QDockWidget::title { background: %panel%; border: 1px solid %border%; padding: 3px 6px; text-align: left; }
 
 /* ---- scrollbars ---- */
