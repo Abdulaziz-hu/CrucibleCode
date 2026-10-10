@@ -47,13 +47,13 @@ Forked it? Anyone can build your fork with:
 
 ```bash
 # Linux / macOS
-curl -fsSL https://raw.githubusercontent.com/<you>/cruciblecode/main/scripts/setup.sh -o setup.sh
-bash setup.sh --repo https://github.com/<you>/cruciblecode.git
+curl -fsSL https://raw.githubusercontent.com/Abdulaziz-hu/CrucibleCode/main/scripts/setup.sh -o setup.sh
+bash setup.sh --repo https://github.com/Abdulaziz-hu/CrucibleCode.git
 ```
 ```powershell
 # Windows
-irm https://raw.githubusercontent.com/<you>/cruciblecode/main/scripts/setup.ps1 -OutFile setup.ps1
-powershell -ExecutionPolicy Bypass -File setup.ps1 -Repo https://github.com/<you>/cruciblecode.git
+irm https://raw.githubusercontent.com/Abdulaziz-hu/CrucibleCode/main/scripts/setup.ps1 -OutFile setup.ps1
+powershell -ExecutionPolicy Bypass -File setup.ps1 -Repo https://github.com/Abdulaziz-hu/CrucibleCode.git
 ```
 
 ## Manual build

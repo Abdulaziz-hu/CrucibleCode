@@ -14,8 +14,8 @@
 #
 #  Run it as a NORMAL user: it uses sudo only for installing system packages.
 #  Straight from a fork:
-#    curl -fsSL https://raw.githubusercontent.com/<you>/cruciblecode/main/scripts/setup.sh | \
-#         bash -s -- --repo https://github.com/<you>/cruciblecode.git
+#    curl -fsSL https://raw.githubusercontent.com/Abdulaziz-hu/CrucibleCode/main/scripts/setup.sh | \
+#         bash -s -- --repo https://github.com/Abdulaziz-hu/CrucibleCode.git
 # =============================================================================
 set -euo pipefail
 
