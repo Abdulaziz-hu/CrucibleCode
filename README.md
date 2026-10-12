@@ -2,12 +2,14 @@
 
 # CrucibleCode
 
+> Repository: **https://github.com/Abdulaziz-hu/CrucibleCode** - issues and pull requests are welcome.
+
 A lightweight, cross-platform, native IDE for **C, C++ and C#**, inspired by Visual Studio Community.
 Built with **C++20** and **Qt 6**. Windows is the primary target; Linux and macOS are fully supported.
 
 Licensed under the **MIT License** (see `LICENSE`).
 
-## Features (v0.3)
+## Features (v0.6)
 
 | Area | What you get |
 |------|--------------|
@@ -21,9 +23,20 @@ Licensed under the **MIT License** (see `LICENSE`).
 | Markdown | Syntax highlighting (headings, emphasis, code, fenced blocks, links, lists, quotes) and a **live preview** dock (`Ctrl+Shift+V`) |
 | Editor | Line numbers, current-line highlight, **bracket matching**, smart indent, block indent, `Ctrl+/` comment, word wrap, Go to Line, find / replace (case, whole word, regex), Find in Files, zoom, CRLF and BOM preserving I/O |
 | Syntax | Built-in highlighter (C, C++, C#, Markdown, CMake, Python, JSON) and automatic use of **KSyntaxHighlighting** (MIT, 300+ languages) when installed. Help > About lists everything |
+| Source control | A **Source Control** tab next to the Explorer, like VS Code: branch switcher, staged / unstaged changes, stage / unstage / discard, commit box (`Ctrl+Enter`), fetch / pull / push (or *Publish*), recent commits, diff tabs, and **coloured gutter bars** for added / modified / deleted lines. Uses the `git` command line (`Ctrl+Shift+G`) |
+| Find / Replace | `Ctrl+F` opens the find bar; the arrow on its left (or `Ctrl+H`) expands **Replace**. Both fields have a history dropdown, **every match is highlighted while you type**, with an "3 of 12" counter, case / whole-word / regex options |
+| Web development | HTML / CSS / JS (and JSON, SVG) with highlighting, tag and property completion and **auto-closing tags**. While you edit a web file a **Go Live** button appears in the top-right of the tab bar: it starts a local **Python** server for your folder, opens the page in your browser and **reloads it every time you save** (CSS-only changes are applied without a reload). Click again to turn it off; *Open in Browser*, the **Web** menu (`Ctrl+Alt+L` / `Ctrl+Alt+B`) and the port are available too. Needs Python 3.7+, standard library only |
+| Cursor | Solid while you type, blinking only when idle (Tools > Settings: always / never blink); same in the terminal |
+| Viewers | Open **images** (PNG, JPEG, GIF, BMP, ICO, ICNS, WebP, TIFF, SVG: zoom, fit, pan, multi-size icons), **PDF** documents (Qt PDF) and see an info page with *Open with default application* for Office files, archives, media and other binaries |
+| Run a file | Right-click any script or program in the Explorer (or a tab) and choose **Run**: `.sh`, `.ps1`, `.bat`, `.py`, `.js`, `.rb`, `.pl`, `.php`, `.lua`, `.jar`, `.go`, executables, files with a shebang. It runs in an integrated terminal. `Ctrl+F5` runs the current file |
+| Markdown | A **Preview** button appears in the top-right of the tab bar while a Markdown file is open |
+| Spelling | Markdown and text files get a **red underline** under misspelled words; right-click for corrections, *Add to dictionary* or *Ignore*. Built-in English dictionary, works offline; code blocks, inline code and URLs are skipped |
+| Suggestions | Off by default (Tools > Settings): a completion popup with the language's keywords and words from the file (`Ctrl+Space`) |
+| AI completion | Off by default (Tools > Settings): grey inline suggestions, `Tab` to accept, from a **small local model** (default Qwen2.5-Coder 0.5B, or any GGUF you choose). Nothing leaves your computer; the one-time downloads (llama.cpp runtime + model) start only when you ask |
 | Explorer | **Hidden files are shown by default** (`.gitignore`, `.env`, ...); turn that off in Tools > Settings. New / rename / delete, *Open in Terminal*, *Copy Path* |
 | Navigation | **Go to File** fuzzy finder (`Ctrl+P`), Find in Files (also searches dot-files), Go to Line, bracket matching, tab menu (close others, copy path, open containing folder) |
 | Safety | Files changed outside the IDE are detected and reloaded (asks first if you have unsaved edits); unsaved-changes prompts everywhere |
+| Scrolling / zoom | `Shift` + mouse wheel scrolls sideways; `Ctrl` + wheel (or `Ctrl` +/-) zooms, and the zoom now survives theme switches, settings changes and word wrap |
 | Editing | Move line `Alt+Up/Down`, duplicate `Shift+Alt+Up/Down`, delete line `Ctrl+Shift+K`, configurable tab size |
 | Startup item | The toolbar combo lists every executable target: read from CMake's File API once configured, from `add_executable()` before that, and `.csproj` files for C# |
 | GPU | Window compositing through Qt's RHI (Direct3D 11/12, OpenGL, Vulkan, Metal); `--no-gpu` and `--gpu-backend=` switches |
@@ -43,18 +56,20 @@ has to be installed, and they do nothing for tools that are already present.
 Useful options: `--debug` / `-Config Debug`, `--no-run` / `-NoRun`, `--clean` / `-Clean`, `--with-dotnet` / `-WithDotNet`
 (C# support), `--use-aqt` (Linux/macOS: take Qt from the official Qt servers), `--repo <url>` / `-Repo <url>` (clone your fork first).
 
-Forked it? Anyone can build your fork with:
+Straight from GitHub (no clone needed, the script fetches the sources itself):
 
 ```bash
 # Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/Abdulaziz-hu/CrucibleCode/main/scripts/setup.sh -o setup.sh
-bash setup.sh --repo https://github.com/Abdulaziz-hu/CrucibleCode.git
+bash setup.sh
 ```
 ```powershell
 # Windows
 irm https://raw.githubusercontent.com/Abdulaziz-hu/CrucibleCode/main/scripts/setup.ps1 -OutFile setup.ps1
-powershell -ExecutionPolicy Bypass -File setup.ps1 -Repo https://github.com/Abdulaziz-hu/CrucibleCode.git
+powershell -ExecutionPolicy Bypass -File setup.ps1
 ```
+
+Built a fork? Add `--repo https://github.com/<you>/CrucibleCode.git` (Windows: `-Repo ...`).
 
 ## Manual build
 
@@ -67,6 +82,11 @@ cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release     # add -DCMAKE_PREFIX
 cmake --build build --parallel
 ./build/CrucibleCode               # macOS: open build/CrucibleCode.app
 ```
+
+## About this project
+
+CrucibleCode is a hobby project made **for fun and learning**. AI tools were used in certain areas of the software
+(code and documentation). It is provided as is, without any warranty (see `LICENSE`).
 
 ## Logo
 

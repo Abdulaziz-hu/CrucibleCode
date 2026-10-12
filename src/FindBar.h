@@ -4,11 +4,13 @@
 #include <QWidget>
 
 class CodeEditor;
-class QCheckBox;
+class QComboBox;
 class QLabel;
-class QLineEdit;
+class QToolButton;
 
 // Inline find / replace bar (Ctrl+F / Ctrl+H) operating on the active editor.
+// The arrow on the left expands the replace row; both fields keep a history dropdown;
+// every match is highlighted in the editor while you type.
 class FindBar : public QWidget {
     Q_OBJECT
 public:
@@ -21,19 +23,33 @@ public slots:
     void findNext();
     void findPrevious();
 
+protected:
+    void keyPressEvent(QKeyEvent* e) override;
+    void hideEvent(QHideEvent* e) override;
+
 private:
-    bool doFind(bool backward);
+    bool doFind(bool backward, bool quiet = false);
+    void onTextChanged();
+    void applyHighlight();
+    void updateStatus();
+    void setReplaceVisible(bool on);
     bool selectionMatches(const QString& selected) const;
     void replaceOne();
     void replaceAll();
+    void remember(QComboBox* box, const QString& key);
+    void loadHistory();
+    QString findText() const;
+    QString replaceText() const;
+    bool useRegex() const;
     QTextDocument::FindFlags flags() const;
 
     QPointer<CodeEditor> m_editor;
-    QLineEdit* m_find = nullptr;
-    QLineEdit* m_replace = nullptr;
-    QCheckBox* m_case = nullptr;
-    QCheckBox* m_word = nullptr;
-    QCheckBox* m_regex = nullptr;
+    QToolButton* m_toggle = nullptr;
+    QComboBox* m_find = nullptr;
+    QComboBox* m_replace = nullptr;
+    QToolButton* m_case = nullptr;
+    QToolButton* m_word = nullptr;
+    QToolButton* m_regex = nullptr;
     QLabel* m_status = nullptr;
     QWidget* m_replaceRow = nullptr;
 };

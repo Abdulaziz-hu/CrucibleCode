@@ -13,6 +13,8 @@ struct ThemeColors {
     QColor keyword, type, string, number, comment, preproc, function;
     // status colors
     QColor error, warning, success;
+    // find matches and Git change markers
+    QColor findMatch, gitAdded, gitModified, gitDeleted;
 };
 
 // Owns the active theme (Light / Dark Grey), the application palette and the

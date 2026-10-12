@@ -133,7 +133,7 @@ void TerminalPanel::newTerminal(const QString& workingDir)
     newTerminal(defaultShell(), workingDir);
 }
 
-void TerminalPanel::newTerminal(const Shell& shell, const QString& workingDir)
+void TerminalPanel::newTerminal(const Shell& shell, const QString& workingDir, const QString& labelIn)
 {
     if (shell.program.isEmpty()) return;
 
@@ -144,7 +144,8 @@ void TerminalPanel::newTerminal(const Shell& shell, const QString& workingDir)
     int same = 0;
     for (int i = 0; i < m_tabs->count(); ++i)
         if (m_tabs->tabText(i).startsWith(shell.name)) ++same;
-    const QString label = same == 0 ? shell.name : QStringLiteral("%1 (%2)").arg(shell.name).arg(same + 1);
+    const QString base = labelIn.isEmpty() ? shell.name : labelIn;
+    const QString label = same == 0 || !labelIn.isEmpty() ? base : QStringLiteral("%1 (%2)").arg(shell.name).arg(same + 1);
 
     const QString wanted = workingDir.isEmpty() ? m_cwd : workingDir;
     const QString cwd = (!wanted.isEmpty() && QFileInfo(wanted).isDir()) ? wanted : QDir::homePath();
@@ -152,6 +153,7 @@ void TerminalPanel::newTerminal(const Shell& shell, const QString& workingDir)
     m_tabs->setCurrentIndex(idx);
     view->setShell(shell.program, shell.args, cwd);
     view->setFocus();
+    m_lastView = view;
 
     connect(view, &TerminalView::titleChanged, this, [this, view](const QString& t) {
         const int i = m_tabs->indexOf(view);
@@ -159,6 +161,18 @@ void TerminalPanel::newTerminal(const Shell& shell, const QString& workingDir)
     });
     connect(view, &TerminalView::finished, this, [this, view](int) { closeView(view); });
     emit countChanged(count());
+}
+
+QString TerminalPanel::defaultShellProgram() const
+{
+    return defaultShell().program;
+}
+
+void TerminalPanel::runCommand(const QString& title, const QString& command, const QString& workingDir)
+{
+    m_lastView = nullptr;
+    newTerminal(defaultShell(), workingDir, title);
+    if (m_lastView) m_lastView->runCommand(command);
 }
 
 void TerminalPanel::closeView(TerminalView* view)

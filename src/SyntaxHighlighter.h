@@ -14,6 +14,9 @@ public:
     // Languages with built-in support (shown in Help > About).
     static QStringList builtinLanguages();
 
+    // Keywords / types of the language of `filePath`, used by the code-suggestion popup.
+    static QStringList completionWords(const QString& filePath);
+
 protected:
     void highlightBlock(const QString& text) override;
 
@@ -28,8 +31,10 @@ private:
         bool preproc = false;
         bool caseInsensitive = false;
         bool markdown = false;
+        bool markup = false;      // HTML / XML tags
     };
 
+    static Lang languageFor(const QString& filePath);
     void setupLanguage(const QString& filePath);
     void setupMarkdown();
     void buildFormats();

@@ -67,6 +67,10 @@ TerminalView::TerminalView(QWidget* parent) : QWidget(parent)
         update();
     });
 
+    m_blinkIdle.setSingleShot(true);
+    m_blinkIdle.setInterval(600);
+    connect(&m_blinkIdle, &QTimer::timeout, this, [this] { if (hasFocus()) m_blink.start(); });
+
     buildFonts(font());
 }
 
@@ -117,6 +121,26 @@ void TerminalView::maybeStart()
         m_screen->write(QStringLiteral("\x1b[31mFailed to start shell: %1\x1b[0m\r\n").arg(err).toUtf8());
         m_exited = true;
         update();
+        return;
+    }
+    if (!m_pendingCommand.isEmpty()) {   // give the shell a moment to print its prompt first
+        QTimer::singleShot(500, this, [this] {
+            if (m_pendingCommand.isEmpty()) return;
+            sendText((m_pendingCommand + QLatin1Char('\r')).toUtf8());
+            m_pendingCommand.clear();
+        });
+    }
+}
+
+void TerminalView::runCommand(const QString& command)
+{
+    m_pendingCommand = command;
+    if (m_pty->isRunning()) {
+        QTimer::singleShot(400, this, [this] {
+            if (m_pendingCommand.isEmpty()) return;
+            sendText((m_pendingCommand + QLatin1Char('\r')).toUtf8());
+            m_pendingCommand.clear();
+        });
     }
 }
 
@@ -427,6 +451,8 @@ void TerminalView::keyPressEvent(QKeyEvent* e)
     if (m_offset != 0) { m_offset = 0; updateScrollBar(); }
     if (m_hasSel) { m_hasSel = false; }
     m_cursorOn = true;
+    m_blink.stop();            // solid while typing, blink again after a short pause
+    m_blinkIdle.start();
     sendText(bytes);
     update();
 }

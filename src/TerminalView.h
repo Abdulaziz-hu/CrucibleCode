@@ -25,6 +25,8 @@ public:
     void pasteClipboard();
     void selectAll();
     void clearScreen();
+    void runCommand(const QString& command);   // typed into the shell once it has started
+    QString shellProgram() const { return m_program; }
     QString title() const { return m_title; }
 
 signals:
@@ -68,9 +70,11 @@ private:
     QScrollBar* m_bar = nullptr;
     QTimer m_repaint;
     QTimer m_blink;
+    QTimer m_blinkIdle;
 
     QString m_program, m_cwd, m_title;
     QStringList m_args;
+    QString m_pendingCommand;
     bool m_pendingStart = false;
     bool m_exited = false;
 

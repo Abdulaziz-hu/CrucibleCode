@@ -13,6 +13,26 @@ CrucibleCode. See the README for options. What they install:
   with `aqtinstall` into `~/Qt` instead.
 * **macOS:** Xcode command line tools, Homebrew (if missing), then `cmake ninja git qt`.
 
+## Bundled syntax highlighting (KSyntaxHighlighting)
+
+The first CMake configure builds KSyntaxHighlighting (MIT) from source as a static library inside the build folder
+(`build/_ksyntax`, log in `build/_ksyntax/build.log`). It needs `git` and network access once, takes a few minutes and is
+cached afterwards. If an installed copy exists (`libkf6syntaxhighlighting-dev`, `kf6-syntax-highlighting-devel`, ...) it is
+used instead. Options: `-DCRUCIBLE_BUNDLE_KSYNTAX=OFF` (never build it), `-DCRUCIBLE_USE_KSYNTAX=OFF` (built-in highlighter
+only), `-DCRUCIBLE_KF_TAG=v6.9.0` (other KDE Frameworks release; 6.5+ needs Qt 6.5+). When anything fails the IDE falls back
+to its built-in highlighter, which covers C, C++, C#, Markdown and many more languages.
+
+## Python (live preview)
+
+The **Go Live** button runs `resources/web/live_server.py` with your system Python 3.7+ (`python3`, `python` or `py -3`).
+The setup scripts install Python; manually: Windows `winget install Python.Python.3.12`, macOS `brew install python`,
+Ubuntu/Debian `sudo apt install python3`, Fedora `sudo dnf install python3`. No pip packages are needed.
+
+## Optional Qt modules
+
+Image formats WebP / TIFF / ICNS need Qt's `qtimageformats`, SVG needs `qtsvg`, the PDF viewer needs `qtpdf`.
+Missing modules only disable that feature (PDF and unsupported images then open in your default application).
+
 ## Manual steps
 
 Requirements everywhere: **Qt 6.4+** (Core, Gui, Widgets), **CMake 3.21+**, a **C++20** compiler.
@@ -42,7 +62,7 @@ sudo apt install build-essential cmake ninja-build git \
 # optional, richer syntax highlighting (package may not exist on older releases):
 sudo apt install libkf6syntaxhighlighting-dev
 
-git clone <your repo> cruciblecode && cd cruciblecode    # or unzip cruciblecode.zip
+git clone https://github.com/Abdulaziz-hu/CrucibleCode.git && cd CrucibleCode
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ./build/CrucibleCode ~/path/to/a/cmake/project

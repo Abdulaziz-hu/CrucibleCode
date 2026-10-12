@@ -25,7 +25,7 @@ param(
     [ValidateSet('Release', 'Debug')][string]$Config = 'Release',
     [switch]$NoRun,
     [switch]$Clean,
-    [string]$Repo = $env:CRUCIBLE_REPO,
+    [string]$Repo = $(if ($env:CRUCIBLE_REPO) { $env:CRUCIBLE_REPO } else { 'https://github.com/Abdulaziz-hu/CrucibleCode.git' }),
     [string]$QtVersion = $(if ($env:CRUCIBLE_QT_VERSION) { $env:CRUCIBLE_QT_VERSION } else { '6.7.3' }),
     [switch]$WithDotNet,
     [ValidateSet('All', 'Install')][string]$Phase = 'All',
@@ -140,7 +140,7 @@ function Invoke-InstallPhase {
         Install-WithWinget 'Microsoft.VisualStudio.2022.BuildTools' @('--override',
             '--wait --quiet --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended')
     }
-    if (-not (Find-Command 'git') -and $Repo) { Install-WithWinget 'Git.Git' $null }
+    if (-not (Find-Command 'git')) { Install-WithWinget 'Git.Git' $null }      # needed to bundle KSyntaxHighlighting
     if ($WithDotNet -and -not (Find-Command 'dotnet')) { Install-WithWinget 'Microsoft.DotNet.SDK.8' $null }
     Write-Ok 'System components installed'
 }
@@ -170,7 +170,7 @@ if (-not $Root) {
             Update-SessionPath
         }
     }
-    $Root = Join-Path (Get-Location).Path 'cruciblecode'
+    $Root = Join-Path (Get-Location).Path 'CrucibleCode'
     Write-Step "Cloning $Repo"
     & git clone --depth 1 $Repo $Root
     if ($LASTEXITCODE -ne 0) { Fail 'git clone failed' }
@@ -183,8 +183,9 @@ $needSystem = $false
 $qt = Find-QtPrefix
 $vs = Find-VsInstall
 if (-not $vs) { $needSystem = $true; Write-Warn2 'Microsoft C++ Build Tools (MSVC) not found' }
-if (-not $qt -and -not (Find-Python)) { $needSystem = $true; Write-Warn2 'Python 3 not found (needed to download Qt)' }
+if (-not (Find-Python)) { $needSystem = $true; Write-Warn2 'Python 3 not found (needed for the live preview server and to download Qt)' }
 if ($WithDotNet -and -not (Find-Command 'dotnet')) { $needSystem = $true }
+if (-not (Find-Command 'git')) { $needSystem = $true; Write-Warn2 'git not found (needed to build the bundled syntax highlighter)' }
 
 if ($needSystem) {
     if (Test-Admin) {
@@ -233,7 +234,11 @@ if (-not $qt -or -not $haveCmake -or -not $haveNinja) {
 if (-not $qt) {
     $qtRoot = Join-Path $env:USERPROFILE 'Qt'
     Write-Step "Downloading Qt $QtVersion (MSVC 2019 64-bit build, works with Visual Studio 2022) - about 500 MB"
-    & (Join-Path $venvScripts 'aqt.exe') install-qt windows desktop $QtVersion win64_msvc2019_64 --outputdir $qtRoot
+    $aqt = Join-Path $venvScripts 'aqt.exe'
+    # with image-format and PDF add-ons when available, otherwise without
+    & $aqt install-qt windows desktop $QtVersion win64_msvc2019_64 --outputdir $qtRoot -m qtimageformats qtpdf
+    if ($LASTEXITCODE -ne 0) { & $aqt install-qt windows desktop $QtVersion win64_msvc2019_64 --outputdir $qtRoot -m qtimageformats }
+    if ($LASTEXITCODE -ne 0) { & $aqt install-qt windows desktop $QtVersion win64_msvc2019_64 --outputdir $qtRoot }
     if ($LASTEXITCODE -ne 0) { Fail 'aqtinstall failed to download Qt' }
     $qt = Join-Path $qtRoot "$QtVersion\msvc2019_64"
     if (-not (Test-Path (Join-Path $qt 'bin\qmake.exe'))) { Fail "Qt was downloaded but $qt looks incomplete" }
@@ -256,7 +261,7 @@ if (Test-Path $venvScripts) { $env:Path = "$venvScripts;$env:Path" }
 # 6. configure + build
 $build = Join-Path $Root 'build'
 if ($Clean -and (Test-Path $build)) { Write-Step 'Cleaning build folder'; Remove-Item $build -Recurse -Force }
-Write-Step "Configuring ($Config)"
+Write-Step "Configuring ($Config) - the first run also builds KSyntaxHighlighting into the IDE (a few minutes)"
 $qtCmake = $qt -replace '\\', '/'
 & cmake -S $Root -B $build -G Ninja "-DCMAKE_BUILD_TYPE=$Config" "-DCMAKE_PREFIX_PATH=$qtCmake"
 if ($LASTEXITCODE -ne 0) { Fail 'CMake configure failed' }

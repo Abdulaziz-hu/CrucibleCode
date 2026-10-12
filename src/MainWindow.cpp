@@ -1,7 +1,14 @@
 #include "MainWindow.h"
 #include "CodeEditor.h"
+#include "AiCompletion.h"
+#include "AppInfo.h"
+#include "FileViewers.h"
+#include "GitManager.h"
+#include "GitPanel.h"
 #include "FindBar.h"
+#include "LiveServer.h"
 #include "QuickOpenDialog.h"
+#include "RunHelper.h"
 #include "SearchPanel.h"
 #include "SettingsDialog.h"
 #include "SyntaxHighlighter.h"
@@ -22,6 +29,7 @@
 #include <QFileInfo>
 #include <QFileSystemModel>
 #include <QFileSystemWatcher>
+#include <QHBoxLayout>
 #include <QHeaderView>
 #include <QFile>
 #include <QInputDialog>
@@ -32,7 +40,9 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QGuiApplication>
 #include <QPixmap>
+#include <QPointer>
 #include <QPlainTextEdit>
 #include <QSettings>
 #include <QStatusBar>
@@ -44,6 +54,7 @@
 #include <QTextDocument>
 #include <QTimer>
 #include <QToolBar>
+#include <QToolButton>
 #include <QTreeView>
 #include <QTreeWidget>
 #include <QUrl>
@@ -62,6 +73,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     setTabPosition(Qt::BottomDockWidgetArea, QTabWidget::South);
 
     m_build = new BuildManager(this);
+    m_ai = new AiCompletion(this);
+    m_git = new GitManager(this);
+    connect(m_git, &GitManager::statusChanged, this, &MainWindow::updateGitUi);
+    connect(m_git, &GitManager::output, this, [this](const QString& t) { appendOutput(QStringLiteral("[git] ") + t, BuildManager::Info); });
+    connect(qApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState st) {
+        if (st == Qt::ApplicationActive) m_git->requestRefresh(300);
+    });
+    m_live = new LiveServer(this);
+    connect(m_live, &LiveServer::stateChanged, this, &MainWindow::updateLiveUi);
+    connect(m_live, &LiveServer::message, this, [this](const QString& t) { appendOutput(QStringLiteral("[live] ") + t, BuildManager::Info); });
+    connect(m_live, &LiveServer::ready, this, [this](const QUrl&) {
+        if (SettingsDialog::liveOpenBrowser()) openLiveInBrowser();
+    });
+    connect(m_ai, &AiCompletion::stateChanged, this, &MainWindow::updateAiLabel);
     m_watcher = new QFileSystemWatcher(this);
     connect(m_watcher, &QFileSystemWatcher::fileChanged, this, &MainWindow::onExternalChange);
 
@@ -75,6 +100,36 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     m_tabs->setMovable(true);
     m_tabs->setDocumentMode(true);
     m_findBar = new FindBar;
+
+    // "Preview" button in the top-right corner of the tab bar, visible for Markdown files
+    m_mdButton = new QToolButton;
+    m_mdButton->setText(tr("Preview"));
+    m_mdButton->setToolTip(tr("Markdown preview (Ctrl+Shift+V)"));
+    m_mdButton->setCheckable(true);
+    m_mdButton->hide();
+    connect(m_mdButton, &QToolButton::clicked, this, [this] { m_mdDock->setVisible(!m_mdDock->isVisible()); });
+
+    // "Go Live": local Python server with live reload for HTML / CSS / JS
+    m_liveButton = new QToolButton;
+    m_liveButton->setText(tr("Go Live"));
+    m_liveButton->setToolTip(tr("Start / stop the live preview server (Ctrl+Alt+L)"));
+    m_liveButton->setCheckable(true);
+    m_liveButton->hide();
+    m_liveOpenButton = new QToolButton;
+    m_liveOpenButton->setText(tr("Open in Browser"));
+    m_liveOpenButton->setToolTip(tr("Open the live preview in your browser"));
+    m_liveOpenButton->hide();
+    connect(m_liveButton, &QToolButton::clicked, this, [this] { toggleLive(); });
+    connect(m_liveOpenButton, &QToolButton::clicked, this, [this] { openLiveInBrowser(); });
+
+    auto* corner = new QWidget;
+    auto* cornerLay = new QHBoxLayout(corner);
+    cornerLay->setContentsMargins(0, 0, 0, 0);
+    cornerLay->setSpacing(2);
+    cornerLay->addWidget(m_liveOpenButton);
+    cornerLay->addWidget(m_liveButton);
+    cornerLay->addWidget(m_mdButton);
+    m_tabs->setCornerWidget(corner, Qt::TopRightCorner);
     lay->addWidget(m_tabs, 1);
     lay->addWidget(m_findBar);
     setCentralWidget(central);
@@ -92,12 +147,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
         m_findBar->setEditor(currentEditor());
         updateStatus();
         updateWindowTitle();
+        updateMarkdownButton();
         updateMarkdownPreview();
     });
 
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this] {
         for (int i = 0; i < m_tabs->count(); ++i)
-            static_cast<CodeEditor*>(m_tabs->widget(i))->applyTheme();
+            if (CodeEditor* ed = editorAt(i)) ed->applyTheme();
+            else if (auto* dv = qobject_cast<DiffViewer*>(m_tabs->widget(i)))
+                for (auto* h : dv->document()->findChildren<QSyntaxHighlighter*>()) h->rehighlight();
         if (m_themeGroup) {
             (ThemeManager::instance().isDark() ? m_actThemeDark : m_actThemeLight)->setChecked(true);
         }
@@ -191,9 +249,9 @@ void MainWindow::createActions()
                        QKeySequence(Qt::CTRL | Qt::Key_Slash));
 
     // View
-    m_actZoomIn = act(tr("Zoom &In"), withEditor([](CodeEditor* e) { e->zoomIn(1); }), QKeySequence::ZoomIn);
-    m_actZoomOut = act(tr("Zoom &Out"), withEditor([](CodeEditor* e) { e->zoomOut(1); }), QKeySequence::ZoomOut);
-    m_actZoomReset = act(tr("&Reset Zoom"), [this] { applyEditorSettings(); }, QKeySequence(Qt::CTRL | Qt::Key_0));
+    m_actZoomIn = act(tr("Zoom &In"), withEditor([](CodeEditor* e) { e->zoomBy(1); }), QKeySequence::ZoomIn);
+    m_actZoomOut = act(tr("Zoom &Out"), withEditor([](CodeEditor* e) { e->zoomBy(-1); }), QKeySequence::ZoomOut);
+    m_actZoomReset = act(tr("&Reset Zoom"), withEditor([](CodeEditor* e) { e->resetZoom(); }), QKeySequence(Qt::CTRL | Qt::Key_0));
 
     m_themeGroup = new QActionGroup(this);
     m_actThemeDark = act(tr("Dark Grey"), [this] { setTheme(ThemeManager::DarkGrey); });
@@ -207,13 +265,29 @@ void MainWindow::createActions()
     m_actWordWrap = act(tr("&Word Wrap"), [this] {
         const bool on = m_actWordWrap->isChecked();
         QSettings().setValue(QStringLiteral("editor/wordWrap"), on);
-        applyEditorSettings();
+        for (int i = 0; i < m_tabs->count(); ++i)      // only the wrap mode: zoom and font stay as they are
+            if (CodeEditor* ed = editorAt(i)) ed->setWordWrap(on);
     });
     m_actWordWrap->setCheckable(true);
     m_actMdPreview = act(tr("Markdown &Preview"), [this] {
         m_mdDock->setVisible(!m_mdDock->isVisible());
     }, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_V));
     m_actResetLayout = act(tr("Reset Panel &Sizes"), [this] { resetPanelSizes(); });
+
+    // Source control
+    m_actSourceControl = act(tr("&Source Control"), [this] {
+        m_gitDock->show();
+        m_gitDock->raise();
+        m_git->requestRefresh(0);
+    }, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_G));
+
+    // Web
+    m_actLiveToggle = act(tr("Start / Stop &Live Server"), [this] { toggleLive(); }, QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_L));
+    m_actLiveOpen = act(tr("Open Live Preview in &Browser"), [this] { openLiveInBrowser(); }, QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_B));
+    m_actBrowserFile = act(tr("Open Current File in Browser (no server)"), [this] {
+        CodeEditor* e = currentEditor();
+        if (e && !e->isUntitled()) QDesktopServices::openUrl(QUrl::fromLocalFile(e->filePath()));
+    });
 
     // Terminal
     m_actNewTerminal = act(tr("&New Terminal"), [this] {
@@ -241,12 +315,18 @@ void MainWindow::createActions()
                      QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B));
     m_actRebuild = act(tr("&Rebuild"), [this] { m_runAfterBuild = false; m_build->rebuild(); });
     m_actClean = act(tr("C&lean"), [this] { m_build->clean(); });
+    m_actRunFile = act(tr("Run Current &File"), [this] {
+        CodeEditor* e = currentEditor();
+        if (!e || e->isUntitled()) return;
+        if (e->document()->isModified()) saveEditor(e);
+        runFile(e->filePath());
+    }, QKeySequence(Qt::CTRL | Qt::Key_F5));
     m_actStop = act(tr("&Stop"), [this] { m_runAfterBuild = false; m_build->stop(); }, QKeySequence(Qt::SHIFT | Qt::Key_F5));
     m_actRun = act(tr("&Run"), [this] { runStartup(); }, QKeySequence(Qt::Key_F5));
 
     // Tools / Help
     m_actSettings = act(tr("&Settings..."), [this] {
-        SettingsDialog dlg(this);
+        SettingsDialog dlg(m_ai, this);
         if (dlg.exec() == QDialog::Accepted) applyEditorSettings();
     });
     m_actAbout = act(tr("&About CrucibleCode"), [this] { showAbout(); });
@@ -296,6 +376,15 @@ void MainWindow::createMenus()
     theme->addAction(m_actThemeLight);
     view->addSeparator();
 
+    QMenu* gitMenu = menuBar()->addMenu(tr("&Git"));
+    gitMenu->addAction(m_actSourceControl);
+
+    QMenu* webMenu = menuBar()->addMenu(tr("&Web"));
+    webMenu->addAction(m_actLiveToggle);
+    webMenu->addAction(m_actLiveOpen);
+    webMenu->addSeparator();
+    webMenu->addAction(m_actBrowserFile);
+
     QMenu* termMenu = menuBar()->addMenu(tr("Te&rminal"));
     termMenu->addAction(m_actNewTerminal);
     termMenu->addAction(m_actToggleTerminal);
@@ -311,12 +400,18 @@ void MainWindow::createMenus()
     build->addAction(m_actConfigure);
     build->addSeparator();
     build->addAction(m_actRun);
+    build->addAction(m_actRunFile);
     build->addAction(m_actStop);
 
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
     tools->addAction(m_actSettings);
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));
+    QAction* actRepo = help->addAction(tr("CrucibleCode on &GitHub"));
+    connect(actRepo, &QAction::triggered, this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kRepoUrl))); });
+    QAction* actIssue = help->addAction(tr("&Report an Issue"));
+    connect(actIssue, &QAction::triggered, this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kIssuesUrl))); });
+    help->addSeparator();
     help->addAction(m_actAbout);
     QAction* aboutQt = help->addAction(tr("About &Qt"));
     connect(aboutQt, &QAction::triggered, qApp, &QApplication::aboutQt);
@@ -377,6 +472,19 @@ void MainWindow::createDocks()
     m_explorerDock->setObjectName(QStringLiteral("explorerDock"));
     m_explorerDock->setWidget(m_tree);
     addDockWidget(Qt::LeftDockWidgetArea, m_explorerDock);
+
+    // Source Control (tabbed with the Explorer, like VS Code's side bar)
+    m_gitPanel = new GitPanel(m_git);
+    m_gitDock = new QDockWidget(tr("Source Control"), this);
+    m_gitDock->setObjectName(QStringLiteral("gitDock"));
+    m_gitDock->setWidget(m_gitPanel);
+    addDockWidget(Qt::LeftDockWidgetArea, m_gitDock);
+    tabifyDockWidget(m_explorerDock, m_gitDock);
+    m_explorerDock->raise();
+    setTabPosition(Qt::LeftDockWidgetArea, QTabWidget::South);
+    m_gitDock->setProperty("defaultSize", 260);
+    connect(m_gitPanel, &GitPanel::openFileRequested, this, [this](const QString& p) { openFile(p); });
+    connect(m_gitPanel, &GitPanel::showDiffRequested, this, &MainWindow::showDiffTab);
 
     // Output
     m_output = new QPlainTextEdit;
@@ -443,7 +551,10 @@ void MainWindow::createDocks()
     m_mdTimer->setSingleShot(true);
     m_mdTimer->setInterval(300);
     connect(m_mdTimer, &QTimer::timeout, this, &MainWindow::updateMarkdownPreview);
-    connect(m_mdDock, &QDockWidget::visibilityChanged, this, [this](bool) { updateMarkdownPreview(); });
+    connect(m_mdDock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        m_mdButton->setChecked(visible);
+        updateMarkdownPreview();
+    });
 
     tabifyDockWidget(m_outputDock, m_errorDock);
     tabifyDockWidget(m_errorDock, m_searchDock);
@@ -460,6 +571,7 @@ void MainWindow::createDocks()
     // View menu: dock toggles
     if (QMenu* view = menuBar()->findChild<QMenu*>(QStringLiteral("viewMenu"))) {
         view->addAction(m_explorerDock->toggleViewAction());
+        view->addAction(m_gitDock->toggleViewAction());
         view->addAction(m_outputDock->toggleViewAction());
         view->addAction(m_errorDock->toggleViewAction());
         view->addAction(m_searchDock->toggleViewAction());
@@ -476,6 +588,15 @@ void MainWindow::createStatusBar()
     m_posLabel = new QLabel;
     m_eolLabel = new QLabel;
     m_encLabel = new QLabel(QStringLiteral("UTF-8"));
+    m_gitLabel = new QLabel;
+    m_gitLabel->hide();
+    statusBar()->addPermanentWidget(m_gitLabel);
+    m_liveLabel = new QLabel;
+    m_liveLabel->hide();
+    statusBar()->addPermanentWidget(m_liveLabel);
+    m_aiLabel = new QLabel;
+    m_aiLabel->hide();
+    statusBar()->addPermanentWidget(m_aiLabel);
     statusBar()->addPermanentWidget(m_posLabel);
     statusBar()->addPermanentWidget(m_eolLabel);
     statusBar()->addPermanentWidget(m_encLabel);
@@ -497,6 +618,10 @@ CodeEditor* MainWindow::newEditor()
     auto* e = new CodeEditor;
     e->setEditorFont(SettingsDialog::editorFont());
     e->setTabSize(SettingsDialog::tabSize());
+    e->setCaretBlinkMode(SettingsDialog::caretBlinkMode());
+    e->setSuggestionsEnabled(SettingsDialog::suggestionsEnabled());
+    e->setSpellCheckEnabled(SettingsDialog::spellCheckEnabled());
+    e->setAiCompletion(m_ai, AiCompletion::enabledInSettings());
     e->setWordWrap(m_actWordWrap && m_actWordWrap->isChecked());
     connect(e, &QPlainTextEdit::textChanged, this, [this, e] {
         if (e == currentEditor() && e->isMarkdown() && m_mdDock->isVisible()) m_mdTimer->start();
@@ -520,15 +645,71 @@ void MainWindow::newFile()
 CodeEditor* MainWindow::openFile(const QString& path, int line, int column)
 {
     const QString abs = QFileInfo(path).absoluteFilePath();
-    for (int i = 0; i < m_tabs->count(); ++i) {
-        auto* e = static_cast<CodeEditor*>(m_tabs->widget(i));
-        if (QFileInfo(e->filePath()) == QFileInfo(abs) && !e->isUntitled()) {
-            m_tabs->setCurrentIndex(i);
+
+    const int existing = tabIndexForPath(abs);
+    if (existing >= 0) {
+        m_tabs->setCurrentIndex(existing);
+        if (CodeEditor* e = editorAt(existing)) {
             if (line > 0) e->goTo(line, column > 0 ? column : 1);
             return e;
         }
+        return nullptr;
     }
 
+    switch (FileKinds::classify(abs)) {
+    case FileKinds::Image: {
+        auto* v = new ImageViewer(abs);
+        if (!v->ok()) {
+            const QString err = v->errorText();
+            delete v;
+            showExternal(abs, tr("This image could not be decoded: %1").arg(err), false);
+            return nullptr;
+        }
+        addViewerTab(v, abs);
+        return nullptr;
+    }
+    case FileKinds::Pdf:
+#ifdef CRUCIBLE_HAVE_PDF
+    {
+        auto* v = new PdfViewer(abs);
+        if (!v->ok()) {
+            const QString err = v->errorText();
+            delete v;
+            showExternal(abs, err, false);
+            return nullptr;
+        }
+        addViewerTab(v, abs);
+        return nullptr;
+    }
+#else
+        break;
+#endif
+    case FileKinds::External: {
+        const QString ext = QFileInfo(abs).suffix().toLower();
+        QString note;
+        if (ext == QLatin1String("pdf"))
+            note = tr("PDF preview needs the Qt PDF module, which this build does not include.");
+        else if (ext == QLatin1String("webp") || ext == QLatin1String("tif") || ext == QLatin1String("tiff") || ext == QLatin1String("icns")
+                 || ext == QLatin1String("avif") || ext == QLatin1String("heic"))
+            note = tr("This Qt build has no decoder for the .%1 image format (available: %2).").arg(ext, FileKinds::imageFormatsHint());
+        showExternal(abs, note, true);
+        return nullptr;
+    }
+    case FileKinds::Text:
+        break;
+    }
+
+    // Unknown extension: binary content is shown in an info page, text opens in the editor.
+    QFile probe(abs);
+    if (probe.open(QIODevice::ReadOnly) && probe.read(8192).contains('\0')) {
+        showExternal(abs, tr("This looks like a binary file."), true);
+        return nullptr;
+    }
+    return openTextEditor(abs, line, column);
+}
+
+CodeEditor* MainWindow::openTextEditor(const QString& abs, int line, int column)
+{
     CodeEditor* e = newEditor();
     QString err;
     if (!e->loadFile(abs, &err)) {
@@ -538,11 +719,146 @@ CodeEditor* MainWindow::openFile(const QString& path, int line, int column)
     }
     const int idx = m_tabs->addTab(e, e->displayName());
     watchEditor(e);
+    refreshGitMarks(e);
     m_tabs->setTabToolTip(idx, abs);
     m_tabs->setCurrentIndex(idx);
     if (line > 0) e->goTo(line, column > 0 ? column : 1);
     else e->setFocus();
+    updateMarkdownButton();
     return e;
+}
+
+void MainWindow::addViewerTab(QWidget* viewer, const QString& path)
+{
+    viewer->setProperty("filePath", path);
+    const int idx = m_tabs->addTab(viewer, QFileInfo(path).fileName());
+    m_tabs->setTabToolTip(idx, path);
+    m_tabs->setCurrentIndex(idx);
+    updateMarkdownButton();
+}
+
+void MainWindow::showExternal(const QString& path, const QString& note, bool offerText)
+{
+    auto* v = new ExternalFileView(path, note, offerText);
+    connect(v, &ExternalFileView::openAsTextRequested, this, &MainWindow::openAsText);
+    addViewerTab(v, path);
+}
+
+void MainWindow::openAsText(const QString& path)
+{
+    const int idx = tabIndexForPath(path);
+    if (idx >= 0) {
+        QWidget* w = m_tabs->widget(idx);
+        m_tabs->removeTab(idx);
+        w->deleteLater();
+    }
+    openTextEditor(path, -1, -1);
+}
+
+CodeEditor* MainWindow::editorAt(int index) const
+{
+    return qobject_cast<CodeEditor*>(m_tabs->widget(index));
+}
+
+QString MainWindow::tabFilePath(int index) const
+{
+    if (CodeEditor* e = editorAt(index)) return e->filePath();
+    QWidget* w = m_tabs->widget(index);
+    return w ? w->property("filePath").toString() : QString();
+}
+
+int MainWindow::tabIndexForPath(const QString& path) const
+{
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        const QString p = tabFilePath(i);
+        if (!p.isEmpty() && QFileInfo(p) == QFileInfo(path)) return i;
+    }
+    return -1;
+}
+
+void MainWindow::updateMarkdownButton()
+{
+    if (!m_mdButton) return;
+    CodeEditor* e = currentEditor();
+    m_mdButton->setVisible(e && e->isMarkdown());
+    updateLiveUi();
+}
+
+void MainWindow::updateLiveUi()
+{
+    if (!m_liveButton || !m_live) return;
+    CodeEditor* e = currentEditor();
+    const bool web = e && e->isWebFile();
+    const bool running = m_live->isRunning();
+    const bool starting = m_live->isStarting();
+    m_liveButton->setVisible(web || running || starting);
+    m_liveButton->setChecked(running || starting);
+    m_liveButton->setText(running ? tr("Live: ON (:%1)").arg(m_live->port()) : starting ? tr("Starting...") : tr("Go Live"));
+    m_liveOpenButton->setVisible(running);
+    m_liveLabel->setVisible(running);
+    if (running) m_liveLabel->setText(tr("Live: %1").arg(m_live->rootUrl().toString()));
+    m_actLiveOpen->setEnabled(running);
+}
+
+void MainWindow::toggleLive()
+{
+    if (m_live->isRunning() || m_live->isStarting()) {
+        m_live->stop();
+        statusBar()->showMessage(tr("Live server stopped."), 4000);
+        return;
+    }
+    CodeEditor* e = currentEditor();
+    const QString file = (e && !e->isUntitled()) ? QFileInfo(e->filePath()).absoluteFilePath() : QString();
+    QString root = m_root;
+    if (root.isEmpty() || (!file.isEmpty() && !file.startsWith(root + QLatin1Char('/'))))
+        root = file.isEmpty() ? root : QFileInfo(file).absolutePath();
+    if (root.isEmpty()) {
+        QMessageBox::information(this, tr("Live Preview"), tr("Open a folder (File > Open Folder) or save the file first."));
+        return;
+    }
+    if (e && e->document()->isModified() && !e->isUntitled()) saveEditor(e);
+
+    QString err;
+    if (!m_live->start(root, SettingsDialog::livePort(), &err)) {
+        QMessageBox::warning(this, tr("Live Preview"), err);
+        return;
+    }
+    m_outputDock->show();
+    m_outputDock->raise();
+}
+
+void MainWindow::openLiveInBrowser()
+{
+    if (!m_live->isRunning()) return;
+    CodeEditor* e = currentEditor();
+    QDesktopServices::openUrl(m_live->urlFor(e ? e->filePath() : QString()));
+}
+
+void MainWindow::updateAiLabel()
+{
+    if (!m_aiLabel) return;
+    const bool on = AiCompletion::enabledInSettings();
+    m_aiLabel->setVisible(on);
+    if (on) m_aiLabel->setText(m_ai->statusText());
+}
+
+void MainWindow::runFile(const QString& path)
+{
+    const QString shell = m_terminals->defaultShellProgram();
+    if (shell.isEmpty()) {
+        QMessageBox::warning(this, tr("Run"), tr("No shell was found to run the file in."));
+        return;
+    }
+    QString err;
+    const QString cmd = RunHelper::commandFor(path, shell, &err);
+    if (cmd.isEmpty()) {
+        QMessageBox::warning(this, tr("Run"), err);
+        return;
+    }
+    m_terminals->runCommand(tr("run: %1").arg(QFileInfo(path).fileName()), cmd, QFileInfo(path).absolutePath());
+    m_terminalDock->show();
+    m_terminalDock->raise();
+    m_terminals->focusCurrent();
 }
 
 bool MainWindow::saveEditor(CodeEditor* e, bool saveAs)
@@ -561,6 +877,7 @@ bool MainWindow::saveEditor(CodeEditor* e, bool saveAs)
     }
     updateTabTitle(e);
     watchEditor(e);
+    m_git->requestRefresh(200);
     const int idx = m_tabs->indexOf(e);
     if (idx >= 0) m_tabs->setTabToolTip(idx, e->filePath());
     updateWindowTitle();
@@ -571,8 +888,8 @@ bool MainWindow::saveEditor(CodeEditor* e, bool saveAs)
 void MainWindow::saveAllModified()
 {
     for (int i = 0; i < m_tabs->count(); ++i) {
-        auto* e = static_cast<CodeEditor*>(m_tabs->widget(i));
-        if (e->document()->isModified() && !e->isUntitled()) saveEditor(e);
+        CodeEditor* e = editorAt(i);
+        if (e && e->document()->isModified() && !e->isUntitled()) saveEditor(e);
     }
 }
 
@@ -588,24 +905,30 @@ bool MainWindow::maybeSave(CodeEditor* e)
 
 void MainWindow::closeTab(int index)
 {
-    auto* e = qobject_cast<CodeEditor*>(m_tabs->widget(index));
-    if (!e || !maybeSave(e)) return;
-    unwatchEditor(e);
+    QWidget* w = m_tabs->widget(index);
+    if (!w) return;
+    if (auto* e = qobject_cast<CodeEditor*>(w)) {
+        if (!maybeSave(e)) return;
+        unwatchEditor(e);
+    }
     m_tabs->removeTab(index);
-    e->deleteLater();
+    w->deleteLater();
     updateStatus();
     updateWindowTitle();
+    updateMarkdownButton();
 }
 
 void MainWindow::closeTabForPath(const QString& path)
 {
     for (int i = m_tabs->count() - 1; i >= 0; --i) {
-        auto* e = static_cast<CodeEditor*>(m_tabs->widget(i));
-        if (!e->isUntitled() && QFileInfo(e->filePath()) == QFileInfo(path)) {
+        const QString p = tabFilePath(i);
+        if (!p.isEmpty() && QFileInfo(p) == QFileInfo(path)) {
+            QWidget* w = m_tabs->widget(i);
             m_tabs->removeTab(i);
-            e->deleteLater();
+            w->deleteLater();
         }
     }
+    updateMarkdownButton();
 }
 
 void MainWindow::updateTabTitle(CodeEditor* e)
@@ -686,11 +1009,19 @@ void MainWindow::applyEditorSettings()
     const QFont f = SettingsDialog::editorFont();
     const bool wrap = s.value(QStringLiteral("editor/wordWrap"), false).toBool();
     for (int i = 0; i < m_tabs->count(); ++i) {
-        auto* e = static_cast<CodeEditor*>(m_tabs->widget(i));
-        e->setEditorFont(f);
+        if (auto* dv = qobject_cast<DiffViewer*>(m_tabs->widget(i))) dv->setFont(f);
+        CodeEditor* e = editorAt(i);
+        if (!e) continue;
+        e->setEditorFont(f);   // keeps each editor's zoom level
         e->setTabSize(SettingsDialog::tabSize());
+        e->setCaretBlinkMode(SettingsDialog::caretBlinkMode());
         e->setWordWrap(wrap);
+        e->setSuggestionsEnabled(SettingsDialog::suggestionsEnabled());
+        e->setSpellCheckEnabled(SettingsDialog::spellCheckEnabled());
+        e->setAiCompletion(m_ai, AiCompletion::enabledInSettings());
     }
+    m_ai->applySettings();
+    updateAiLabel();
     m_output->setFont(f);
     m_terminals->setTerminalFont(f);
     applyExplorerFilter();
@@ -721,6 +1052,7 @@ void MainWindow::openFolder(const QString& path)
         if (!m_root.isEmpty()) saveSession();
         if (!closeAllEditors()) return;   // user cancelled an unsaved-changes prompt
         m_terminals->closeAll();
+        m_live->stop();
         m_output->clear();
         m_errors->clear();
         m_errorDock->setWindowTitle(tr("Error List"));
@@ -733,6 +1065,7 @@ void MainWindow::openFolder(const QString& path)
     m_explorerDock->setWindowTitle(tr("Explorer - %1").arg(QFileInfo(m_root).fileName()));
 
     m_build->setProjectRoot(m_root);
+    m_git->setRoot(m_root);
     m_terminals->setWorkingDirectory(m_root);
     m_search->setRoot(m_root, m_build->buildRoot());
     refreshStartupItems();
@@ -759,15 +1092,18 @@ void MainWindow::openFolder(const QString& path)
 bool MainWindow::closeAllEditors()
 {
     for (int i = m_tabs->count() - 1; i >= 0; --i) {
-        auto* e = static_cast<CodeEditor*>(m_tabs->widget(i));
+        QWidget* w = m_tabs->widget(i);
         m_tabs->setCurrentIndex(i);
-        if (!maybeSave(e)) return false;
-        unwatchEditor(e);
+        if (auto* e = qobject_cast<CodeEditor*>(w)) {
+            if (!maybeSave(e)) return false;
+            unwatchEditor(e);
+        }
         m_tabs->removeTab(i);
-        e->deleteLater();
+        w->deleteLater();
     }
     updateStatus();
     updateWindowTitle();
+    updateMarkdownButton();
     return true;
 }
 
@@ -783,11 +1119,16 @@ void MainWindow::saveSession()
     QStringList files;
     QString current;
     for (int i = 0; i < m_tabs->count(); ++i) {
-        auto* e = static_cast<CodeEditor*>(m_tabs->widget(i));
-        if (e->isUntitled()) continue;
-        const QTextCursor c = e->textCursor();
-        files << QStringLiteral("%1|%2|%3").arg(e->filePath()).arg(c.blockNumber() + 1).arg(c.positionInBlock() + 1);
-        if (i == m_tabs->currentIndex()) current = e->filePath();
+        const QString path = tabFilePath(i);
+        if (path.isEmpty()) continue;
+        int line = 0, col = 0;
+        if (CodeEditor* e = editorAt(i)) {
+            const QTextCursor c = e->textCursor();
+            line = c.blockNumber() + 1;
+            col = c.positionInBlock() + 1;
+        }
+        files << QStringLiteral("%1|%2|%3").arg(path).arg(line).arg(col);
+        if (i == m_tabs->currentIndex()) current = path;
     }
     QSettings s;
     const QString k = sessionKey(m_root);
@@ -810,7 +1151,7 @@ void MainWindow::restoreSession()
         openFile(file, entry.mid(p1 + 1, p2 - p1 - 1).toInt(), entry.mid(p2 + 1).toInt());
     }
     for (int i = 0; i < m_tabs->count(); ++i) {
-        if (static_cast<CodeEditor*>(m_tabs->widget(i))->filePath() == current) {
+        if (tabFilePath(i) == current) {
             m_tabs->setCurrentIndex(i);
             break;
         }
@@ -832,6 +1173,11 @@ void MainWindow::showTreeContextMenu(const QPoint& pos)
     const QString dir = fi.isDir() ? path : fi.absolutePath();
 
     QMenu menu(this);
+    QAction* aRun = nullptr;
+    if (!fi.isDir() && RunHelper::isRunnable(path)) {
+        aRun = menu.addAction(tr("Run"));
+        menu.addSeparator();
+    }
     QAction* aNewFile = menu.addAction(tr("New File..."));
     QAction* aNewDir = menu.addAction(tr("New Folder..."));
     QAction *aRename = nullptr, *aDelete = nullptr;
@@ -848,7 +1194,9 @@ void MainWindow::showTreeContextMenu(const QPoint& pos)
     QAction* chosen = menu.exec(m_tree->viewport()->mapToGlobal(pos));
     if (!chosen) return;
 
-    if (chosen == aNewFile) {
+    if (aRun && chosen == aRun) {
+        runFile(path);
+    } else if (chosen == aNewFile) {
         const QString name = QInputDialog::getText(this, tr("New File"), tr("File name:"));
         if (name.trimmed().isEmpty()) return;
         const QString target = QDir(dir).filePath(name.trimmed());
@@ -990,7 +1338,8 @@ void MainWindow::runStartup()
 void MainWindow::closeEvent(QCloseEvent* e)
 {
     for (int i = 0; i < m_tabs->count(); ++i) {
-        auto* ed = static_cast<CodeEditor*>(m_tabs->widget(i));
+        CodeEditor* ed = editorAt(i);
+        if (!ed) continue;
         m_tabs->setCurrentIndex(i);
         if (!maybeSave(ed)) {
             e->ignore();
@@ -998,6 +1347,8 @@ void MainWindow::closeEvent(QCloseEvent* e)
         }
     }
     m_build->stop();
+    m_ai->stop();
+    m_live->stop();
     saveSession();
     QSettings s;
     s.setValue(QStringLiteral("window/geometry"), saveGeometry());
@@ -1091,7 +1442,7 @@ void MainWindow::showAbout()
     const QString builtin = SyntaxHighlighter::builtinLanguages().join(QStringLiteral(", "));
     const QString more = extra > 0
         ? tr("Plus <b>%1 more languages</b> through KSyntaxHighlighting (syntax highlighting).").arg(extra)
-        : tr("Install KSyntaxHighlighting and rebuild to add 300+ more languages of highlighting.");
+        : tr("KSyntaxHighlighting (300+ more languages) is not part of this build: configure again with git and network access to bundle it.");
 
     QMessageBox box(this);
     box.setWindowTitle(tr("About CrucibleCode"));
@@ -1104,8 +1455,14 @@ void MainWindow::showAbout()
         "&bull; <b>C</b> and <b>C++</b> &mdash; highlighting, CMake build / run, compiler diagnostics (GCC, Clang, MSVC)<br>"
         "&bull; <b>C#</b> &mdash; highlighting, .NET build / run via the <tt>dotnet</tt> CLI (.sln / .csproj), MSBuild diagnostics</p>"
         "<p><b>Also supported (built in):</b> %2.<br>%3</p>"
-        "<p>Integrated native terminals (PowerShell, cmd, bash, zsh, ...), Markdown preview, find in files.</p>")
-        .arg(QApplication::applicationVersion(), builtin, more));
+        "<p><a href=\"%4\">%4</a></p>"
+        "<p><b>Also included:</b> image viewer (PNG, JPEG, WebP, ICO, ICNS, SVG, ...), PDF viewer, integrated native terminals, "
+        "run-a-script from the Explorer, Markdown preview, spell check for Markdown / text files, optional code suggestions "
+        "and optional local AI tab completion, Git source control, live preview for web projects.</p>"
+        "<p><i>Disclaimer: CrucibleCode is a hobby project made for fun and learning. AI tools were used in certain areas "
+        "of the software (code and documentation). It is provided as is, without any warranty.</i></p>")
+        .arg(QApplication::applicationVersion(), builtin, more, QString::fromLatin1(kRepoUrl)));
+    box.setTextInteractionFlags(Qt::TextBrowserInteraction);
     box.setIconPixmap(QPixmap(QStringLiteral(":/icons/icon-64.png")));
     box.setStandardButtons(QMessageBox::Ok);
     box.exec();
@@ -1148,8 +1505,8 @@ void MainWindow::onExternalChange(const QString& path)
 {
     CodeEditor* editor = nullptr;
     for (int i = 0; i < m_tabs->count(); ++i) {
-        auto* e = static_cast<CodeEditor*>(m_tabs->widget(i));
-        if (!e->isUntitled() && QFileInfo(e->filePath()) == QFileInfo(path)) { editor = e; break; }
+        CodeEditor* e = editorAt(i);
+        if (e && !e->isUntitled() && QFileInfo(e->filePath()) == QFileInfo(path)) { editor = e; break; }
     }
     if (!editor) return;
 
@@ -1192,6 +1549,8 @@ void MainWindow::showTabContextMenu(const QPoint& pos)
     aOthers->setEnabled(m_tabs->count() > 1);
     QAction* aAll = menu.addAction(tr("Close All"));
     menu.addSeparator();
+    QAction* aRun = nullptr;
+    if (!e->isUntitled() && RunHelper::isRunnable(e->filePath())) aRun = menu.addAction(tr("Run"));
     QAction* aCopy = menu.addAction(tr("Copy Path"));
     aCopy->setEnabled(!e->isUntitled());
     QAction* aReveal = menu.addAction(tr("Open Containing Folder"));
@@ -1199,7 +1558,10 @@ void MainWindow::showTabContextMenu(const QPoint& pos)
 
     QAction* chosen = menu.exec(m_tabs->tabBar()->mapToGlobal(pos));
     if (!chosen) return;
-    if (chosen == aSave) saveEditor(e);
+    if (aRun && chosen == aRun) {
+        if (e->document()->isModified()) saveEditor(e);
+        runFile(e->filePath());
+    } else if (chosen == aSave) saveEditor(e);
     else if (chosen == aClose) closeTab(m_tabs->indexOf(e));
     else if (chosen == aOthers) {
         for (int i = m_tabs->count() - 1; i >= 0; --i)
@@ -1211,4 +1573,65 @@ void MainWindow::showTabContextMenu(const QPoint& pos)
     } else if (chosen == aReveal) {
         QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(e->filePath()).absolutePath()));
     }
+}
+
+// ---------------------------------------------------------------------------------
+// Git integration
+// ---------------------------------------------------------------------------------
+
+void MainWindow::updateGitUi()
+{
+    if (!m_gitLabel) return;
+    const GitStatus& st = m_git->status();
+    if (st.isRepo) {
+        const QString branch = st.detached ? tr("detached") : st.branch;
+        m_gitLabel->setText(QStringLiteral("git: ") + branch + (st.changes.isEmpty() ? QString() : QStringLiteral("*")));
+        m_gitLabel->setToolTip(tr("%n changed file(s)", nullptr, int(st.changes.size())));
+        m_gitLabel->show();
+    } else {
+        m_gitLabel->hide();
+    }
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (CodeEditor* e = editorAt(i)) refreshGitMarks(e);
+}
+
+// Coloured bars in the gutter: added / modified / deleted lines compared with HEAD.
+void MainWindow::refreshGitMarks(CodeEditor* e)
+{
+    if (!e) return;
+    const GitStatus& st = m_git->status();
+    if (!st.isRepo || e->isUntitled()) { e->setLineMarks({}); return; }
+
+    const QString rel = QDir(m_git->topLevel()).relativeFilePath(e->filePath());
+    for (const GitChange& c : st.changes) {
+        if (c.path == rel && c.untracked()) {          // brand-new file: every line is added
+            QHash<int, int> all;
+            for (int n = 1; n <= e->blockCount(); ++n) all.insert(n, CodeEditor::MarkAdded);
+            e->setLineMarks(all);
+            return;
+        }
+    }
+    QPointer<CodeEditor> guard(e);
+    m_git->lineMarks(e->filePath(), [guard](const QHash<int, int>& marks) {
+        if (guard) guard->setLineMarks(marks);
+    });
+}
+
+void MainWindow::showDiffTab(const QString& key, const QString& title, const QString& text)
+{
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        auto* dv = qobject_cast<DiffViewer*>(m_tabs->widget(i));
+        if (dv && dv->property("diffKey").toString() == key) {
+            dv->setDiff(text);
+            m_tabs->setCurrentIndex(i);
+            return;
+        }
+    }
+    auto* dv = new DiffViewer;
+    dv->setFont(SettingsDialog::editorFont());
+    dv->setProperty("diffKey", key);
+    dv->setDiff(text);
+    const int idx = m_tabs->addTab(dv, title);
+    m_tabs->setTabToolTip(idx, title);
+    m_tabs->setCurrentIndex(idx);
 }

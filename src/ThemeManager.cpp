@@ -39,6 +39,7 @@ ThemeColors ThemeManager::makeColors(Id id)
         c.number = "#B5CEA8";  c.comment = "#57A64A"; c.preproc = "#BD63C5";
         c.function = "#DCDCAA";
         c.error = "#F48771";   c.warning = "#CCA700"; c.success = "#73C991";
+        c.findMatch = "#6A5322"; c.gitAdded = "#587C0C"; c.gitModified = "#1B81A8"; c.gitDeleted = "#C74E39";
     } else {
         c.window = "#EEEEF2";  c.panel = "#F5F5F5";  c.base = "#FFFFFF";
         c.text = "#1E1E1E";    c.textDim = "#717171"; c.border = "#CCCEDB";
@@ -51,6 +52,7 @@ ThemeColors ThemeManager::makeColors(Id id)
         c.number = "#098658";  c.comment = "#008000"; c.preproc = "#AF00DB";
         c.function = "#74531F";
         c.error = "#E51400";   c.warning = "#BF8803"; c.success = "#388A34";
+        c.findMatch = "#F7DC6F"; c.gitAdded = "#2EA043"; c.gitModified = "#1F6FEB"; c.gitDeleted = "#D1242F";
     }
     return c;
 }

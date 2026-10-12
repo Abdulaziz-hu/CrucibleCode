@@ -1,4 +1,6 @@
 #include "SettingsDialog.h"
+#include "AiCompletion.h"
+#include "AiSetupDialog.h"
 #include "ThemeManager.h"
 
 #include <QCheckBox>
@@ -7,7 +9,10 @@
 #include <QFontComboBox>
 #include <QFontDatabase>
 #include <QFormLayout>
+#include <QHBoxLayout>
+#include <QSignalBlocker>
 #include <QLabel>
+#include <QPushButton>
 #include <QLineEdit>
 #include <QSettings>
 #include <QSpinBox>
@@ -41,7 +46,32 @@ int SettingsDialog::tabSize()
     return qBound(1, QSettings().value(QStringLiteral("editor/tabSize"), 4).toInt(), 16);
 }
 
-SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
+bool SettingsDialog::suggestionsEnabled()
+{
+    return QSettings().value(QStringLiteral("editor/suggestions"), false).toBool();
+}
+
+int SettingsDialog::caretBlinkMode()
+{
+    return qBound(0, QSettings().value(QStringLiteral("editor/caretBlink"), 0).toInt(), 2);
+}
+
+int SettingsDialog::livePort()
+{
+    return qBound(1024, QSettings().value(QStringLiteral("web/livePort"), 5500).toInt(), 65000);
+}
+
+bool SettingsDialog::liveOpenBrowser()
+{
+    return QSettings().value(QStringLiteral("web/openBrowser"), true).toBool();
+}
+
+bool SettingsDialog::spellCheckEnabled()
+{
+    return QSettings().value(QStringLiteral("editor/spellcheck"), true).toBool();
+}
+
+SettingsDialog::SettingsDialog(AiCompletion* ai, QWidget* parent) : QDialog(parent), m_aiEngine(ai)
 {
     setWindowTitle(tr("Settings"));
     setMinimumWidth(460);
@@ -75,6 +105,51 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent)
     m_hidden->setChecked(showHiddenFiles());
     form->addRow(QString(), m_hidden);
 
+    m_caret = new QComboBox;
+    m_caret->addItem(tr("Solid while typing, blinks when idle"), 0);
+    m_caret->addItem(tr("Always blink"), 1);
+    m_caret->addItem(tr("Never blink"), 2);
+    m_caret->setCurrentIndex(caretBlinkMode());
+    form->addRow(tr("Cursor:"), m_caret);
+
+    m_livePort = new QSpinBox;
+    m_livePort->setRange(1024, 65000);
+    m_livePort->setValue(livePort());
+    form->addRow(tr("Live preview port:"), m_livePort);
+    m_liveOpen = new QCheckBox(tr("Open the browser when the live preview starts (needs Python 3)"));
+    m_liveOpen->setChecked(liveOpenBrowser());
+    form->addRow(QString(), m_liveOpen);
+
+    m_suggest = new QCheckBox(tr("Code suggestions while typing (keywords and words from the file; Ctrl+Space)"));
+    m_suggest->setChecked(suggestionsEnabled());
+    form->addRow(tr("Suggestions:"), m_suggest);
+
+    m_spell = new QCheckBox(tr("Spell check Markdown and text files (red underline, right-click for corrections)"));
+    m_spell->setChecked(spellCheckEnabled());
+    form->addRow(tr("Spelling:"), m_spell);
+
+    m_aiBox = new QCheckBox(tr("AI tab completion with a local model (grey suggestion, Tab to accept)"));
+    m_aiBox->setChecked(AiCompletion::enabledInSettings());
+    auto* aiSetup = new QPushButton(tr("Set up AI model..."));
+    auto* aiRow = new QHBoxLayout;
+    aiRow->addWidget(m_aiBox, 1);
+    aiRow->addWidget(aiSetup);
+    form->addRow(tr("AI:"), aiRow);
+    connect(aiSetup, &QPushButton::clicked, this, [this] {
+        AiSetupDialog dlg(m_aiEngine, this);
+        dlg.exec();
+        m_aiBox->setChecked(AiCompletion::enabledInSettings());
+    });
+    connect(m_aiBox, &QCheckBox::toggled, this, [this](bool on) {
+        if (!on || (m_aiEngine->runtimeAvailable() && m_aiEngine->modelAvailable())) return;
+        // first use: the local model has to be downloaded
+        QSignalBlocker block(m_aiBox);
+        m_aiBox->setChecked(false);
+        AiSetupDialog dlg(m_aiEngine, this);
+        dlg.exec();
+        m_aiBox->setChecked(AiCompletion::enabledInSettings());
+    });
+
     m_cmake = new QLineEdit(s.value(QStringLiteral("cmake/path")).toString());
     m_cmake->setPlaceholderText(tr("cmake (found on PATH)"));
     form->addRow(tr("CMake executable:"), m_cmake);
@@ -103,11 +178,18 @@ void SettingsDialog::accept()
     s.setValue(QStringLiteral("editor/fontSize"), m_fontSize->value());
     s.setValue(QStringLiteral("editor/tabSize"), m_tabSize->value());
     s.setValue(QStringLiteral("explorer/showHidden"), m_hidden->isChecked());
+    s.setValue(QStringLiteral("editor/caretBlink"), m_caret->currentData().toInt());
+    s.setValue(QStringLiteral("web/livePort"), m_livePort->value());
+    s.setValue(QStringLiteral("web/openBrowser"), m_liveOpen->isChecked());
+    s.setValue(QStringLiteral("editor/suggestions"), m_suggest->isChecked());
+    s.setValue(QStringLiteral("editor/spellcheck"), m_spell->isChecked());
+    s.setValue(QStringLiteral("ai/enabled"), m_aiBox->isChecked());
     s.setValue(QStringLiteral("cmake/path"), m_cmake->text().trimmed());
     s.setValue(QStringLiteral("cmake/generator"), m_generator->text().trimmed());
     s.setValue(QStringLiteral("cmake/extraArgs"), m_extra->text());
     const QString theme = m_theme->currentData().toString();
     s.setValue(QStringLiteral("theme"), theme);
-    ThemeManager::instance().apply(ThemeManager::nameToId(theme));
+    if (ThemeManager::nameToId(theme) != ThemeManager::instance().current())
+        ThemeManager::instance().apply(ThemeManager::nameToId(theme));
     QDialog::accept();
 }

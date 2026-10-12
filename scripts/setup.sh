@@ -14,12 +14,12 @@
 #
 #  Run it as a NORMAL user: it uses sudo only for installing system packages.
 #  Straight from a fork:
-#    curl -fsSL https://raw.githubusercontent.com/Abdulaziz-hu/CrucibleCode/main/scripts/setup.sh | \
-#         bash -s -- --repo https://github.com/Abdulaziz-hu/CrucibleCode.git
+#    curl -fsSL https://raw.githubusercontent.com/Abdulaziz-hu/CrucibleCode/main/scripts/setup.sh | bash
+#  (for a fork add:  bash -s -- --repo https://github.com/<you>/CrucibleCode.git)
 # =============================================================================
 set -euo pipefail
 
-REPO_URL="${CRUCIBLE_REPO:-}"
+REPO_URL="${CRUCIBLE_REPO:-https://github.com/Abdulaziz-hu/CrucibleCode.git}"
 CONFIG="Release"
 RUN=1; CLEAN=0; WITH_DOTNET=0; FORCE_AQT=0; ASSUME_YES=0
 QT_VERSION="${CRUCIBLE_QT_VERSION:-6.7.3}"
@@ -83,7 +83,7 @@ elif [ -f "$PWD/CMakeLists.txt" ] && grep -q "CrucibleCode" "$PWD/CMakeLists.txt
 fi
 if [ -z "$ROOT" ]; then
   [ -n "$REPO_URL" ] || die "Sources not found. Run this from a clone of the repository, or pass --repo <git url>."
-  ROOT="$PWD/cruciblecode"
+  ROOT="$PWD/CrucibleCode"
 fi
 
 # --- package installation -----------------------------------------------------
@@ -116,26 +116,33 @@ install_linux_packages() {
   case "$fam" in
     debian)
       need_root_cmd apt-get update
-      need_root_cmd apt-get install -y build-essential cmake ninja-build git pkg-config curl ca-certificates \
+      need_root_cmd apt-get install -y build-essential cmake ninja-build git pkg-config curl ca-certificates python3 python3-venv \
         qt6-base-dev qt6-base-dev-tools libgl1-mesa-dev libxkbcommon-dev libvulkan-dev qt6-wayland
-      need_root_cmd apt-get install -y libkf6syntaxhighlighting-dev || warn "KSyntaxHighlighting not available (optional)."
+      need_root_cmd apt-get install -y qt6-svg-dev qt6-image-formats-plugins || warn "Qt SVG / WebP image support not available (optional)."
+      need_root_cmd apt-get install -y qt6-pdf-dev || warn "Qt PDF not available: PDF files will open in your default PDF viewer (optional)."
+      need_root_cmd apt-get install -y libkf6syntaxhighlighting-dev || warn "System KSyntaxHighlighting not available: it will be built into CrucibleCode instead."
       if [ "$WITH_DOTNET" = 1 ]; then need_root_cmd apt-get install -y dotnet-sdk-8.0 || warn "Could not install dotnet-sdk-8.0 (see https://dot.net)."; fi
       ;;
     fedora)
-      need_root_cmd dnf install -y gcc-c++ cmake ninja-build git pkgconf-pkg-config curl \
+      need_root_cmd dnf install -y gcc-c++ cmake ninja-build git pkgconf-pkg-config curl python3 \
         qt6-qtbase-devel qt6-qtwayland mesa-libGL-devel libxkbcommon-devel vulkan-loader-devel
-      need_root_cmd dnf install -y kf6-syntax-highlighting-devel || warn "KSyntaxHighlighting not available (optional)."
+      need_root_cmd dnf install -y qt6-qtsvg-devel qt6-qtimageformats || warn "Qt SVG / WebP image support not available (optional)."
+      need_root_cmd dnf install -y qt6-qtpdf-devel || warn "Qt PDF not available: PDF files will open in your default PDF viewer (optional)."
+      need_root_cmd dnf install -y kf6-syntax-highlighting-devel || warn "System KSyntaxHighlighting not available: it will be built into CrucibleCode instead."
       if [ "$WITH_DOTNET" = 1 ]; then need_root_cmd dnf install -y dotnet-sdk-8.0 || warn "Could not install dotnet-sdk-8.0."; fi
       ;;
     arch)
-      need_root_cmd pacman -Sy --needed --noconfirm base-devel cmake ninja git curl qt6-base qt6-wayland \
+      need_root_cmd pacman -Sy --needed --noconfirm base-devel cmake ninja git curl python qt6-base qt6-wayland \
         mesa libxkbcommon vulkan-icd-loader
-      need_root_cmd pacman -S --needed --noconfirm syntax-highlighting || warn "KSyntaxHighlighting not available (optional)."
+      need_root_cmd pacman -S --needed --noconfirm qt6-svg qt6-imageformats || warn "Qt SVG / WebP image support not available (optional)."
+      need_root_cmd pacman -S --needed --noconfirm syntax-highlighting || warn "System KSyntaxHighlighting not available: it will be built into CrucibleCode instead."
       if [ "$WITH_DOTNET" = 1 ]; then need_root_cmd pacman -S --needed --noconfirm dotnet-sdk || warn "Could not install dotnet-sdk."; fi
       ;;
     suse)
-      need_root_cmd zypper --non-interactive install -y gcc-c++ cmake ninja git curl pkg-config \
+      need_root_cmd zypper --non-interactive install -y gcc-c++ cmake ninja git curl pkg-config python3 \
         qt6-base-devel qt6-wayland libxkbcommon-devel Mesa-libGL-devel vulkan-devel
+      need_root_cmd zypper --non-interactive install -y qt6-svg-devel qt6-imageformats || warn "Qt SVG / WebP image support not available (optional)."
+      need_root_cmd zypper --non-interactive install -y qt6-pdf-devel || warn "Qt PDF not available (optional)."
       if [ "$WITH_DOTNET" = 1 ]; then need_root_cmd zypper --non-interactive install -y dotnet-sdk-8.0 || warn "Could not install dotnet-sdk-8.0."; fi
       ;;
     alpine)
@@ -163,11 +170,18 @@ install_macos_packages() {
   fi
   have brew || die "Homebrew is not available. Install it from https://brew.sh and re-run."
   log "Installing build dependencies with Homebrew"
-  for pkg in cmake ninja git qt; do brew list --formula "$pkg" >/dev/null 2>&1 || brew install "$pkg"; done
+  for pkg in cmake ninja git qt python; do brew list --formula "$pkg" >/dev/null 2>&1 || brew install "$pkg"; done
   if [ "$WITH_DOTNET" = 1 ]; then brew list --cask dotnet-sdk >/dev/null 2>&1 || brew install --cask dotnet-sdk || warn "Could not install the .NET SDK."; fi
 }
 
 QT_PREFIX=""
+aqt_try() {   # aqt_try <host> <arch> <outdir> : tries with image-format + PDF modules, then fewer
+  local venv="$HOME/.cache/cruciblecode/venv"
+  as_user "$venv/bin/aqt" install-qt "$1" desktop "$QT_VERSION" "$2" -O "$3" -m qtimageformats qtpdf \
+    || as_user "$venv/bin/aqt" install-qt "$1" desktop "$QT_VERSION" "$2" -O "$3" -m qtimageformats \
+    || as_user "$venv/bin/aqt" install-qt "$1" desktop "$QT_VERSION" "$2" -O "$3"
+}
+
 install_qt_with_aqt() {
   log "Installing Qt $QT_VERSION with aqtinstall (official Qt servers, no account needed)"
   have python3 || die "python3 is required for aqtinstall."
@@ -176,11 +190,11 @@ install_qt_with_aqt() {
   as_user "$venv/bin/pip" install --quiet --upgrade pip aqtinstall
   local out="$HOME/Qt" dir=""
   if [ "$OS" = "Darwin" ]; then
-    as_user "$venv/bin/aqt" install-qt mac desktop "$QT_VERSION" clang_64 -O "$out" ; dir="$out/$QT_VERSION/macos"
+    aqt_try mac clang_64 "$out"
+    dir="$out/$QT_VERSION/macos"
     [ -d "$dir" ] || dir="$out/$QT_VERSION/clang_64"
   else
-    as_user "$venv/bin/aqt" install-qt linux desktop "$QT_VERSION" linux_gcc_64 -O "$out" \
-      || as_user "$venv/bin/aqt" install-qt linux desktop "$QT_VERSION" gcc_64 -O "$out"
+    aqt_try linux linux_gcc_64 "$out" || aqt_try linux gcc_64 "$out"
     dir="$out/$QT_VERSION/gcc_64"
     if [ "$(linux_family)" = "debian" ]; then   # runtime libraries the official Qt binaries expect
       need_root_cmd apt-get install -y libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
@@ -236,7 +250,7 @@ fi
 # --- 3. build ----------------------------------------------------------------------
 BUILD_DIR="$ROOT/build"
 [ "$CLEAN" = 1 ] && { log "Cleaning $BUILD_DIR"; as_user rm -rf "$BUILD_DIR"; }
-log "Configuring ($CONFIG)"
+log "Configuring ($CONFIG) - the first run also builds KSyntaxHighlighting into the IDE (a few minutes)"
 args=(-S "$ROOT" -B "$BUILD_DIR" -G Ninja "-DCMAKE_BUILD_TYPE=$CONFIG")
 [ -n "$QT_PREFIX" ] && args+=("-DCMAKE_PREFIX_PATH=$QT_PREFIX")
 as_user cmake "${args[@]}"

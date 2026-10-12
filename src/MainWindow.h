@@ -4,7 +4,12 @@
 
 #include <QMainWindow>
 
+class AiCompletion;
+class GitManager;
+class GitPanel;
+class LiveServer;
 class CodeEditor;
+class QToolButton;
 class FindBar;
 class SearchPanel;
 class QAction;
@@ -73,6 +78,24 @@ private:
     void onBuildFinished(int code, bool ok);
     void runStartup();
 
+    // tabs that are not text editors (images, PDFs, other files)
+    CodeEditor* editorAt(int index) const;
+    QString tabFilePath(int index) const;
+    int tabIndexForPath(const QString& path) const;
+    void addViewerTab(QWidget* viewer, const QString& path);
+    void showExternal(const QString& path, const QString& note, bool offerText);
+    CodeEditor* openTextEditor(const QString& path, int line, int column);
+    void openAsText(const QString& path);
+    void runFile(const QString& path);
+    void updateMarkdownButton();
+    void updateAiLabel();
+    void updateLiveUi();
+    void updateGitUi();
+    void refreshGitMarks(CodeEditor* e);
+    void showDiffTab(const QString& key, const QString& title, const QString& text);
+    void toggleLive();
+    void openLiveInBrowser();
+
     // sessions / panels / misc
     bool closeAllEditors();
     static QString sessionKey(const QString& root);
@@ -113,6 +136,20 @@ private:
     QMenu* m_recentMenu = nullptr;
     QActionGroup* m_themeGroup = nullptr;
     QFileSystemWatcher* m_watcher = nullptr;
+    AiCompletion* m_ai = nullptr;
+    QLabel* m_aiLabel = nullptr;
+    QToolButton* m_mdButton = nullptr;
+    LiveServer* m_live = nullptr;
+    GitManager* m_git = nullptr;
+    GitPanel* m_gitPanel = nullptr;
+    QDockWidget* m_gitDock = nullptr;
+    QLabel* m_gitLabel = nullptr;
+    QAction* m_actSourceControl = nullptr;
+    QToolButton* m_liveButton = nullptr;
+    QToolButton* m_liveOpenButton = nullptr;
+    QLabel* m_liveLabel = nullptr;
+    QAction *m_actLiveToggle = nullptr, *m_actLiveOpen = nullptr, *m_actBrowserFile = nullptr;
+    QAction* m_actRunFile = nullptr;
     QAction* m_actQuickOpen = nullptr;
     TerminalPanel* m_terminals = nullptr;
     QDockWidget* m_terminalDock = nullptr;

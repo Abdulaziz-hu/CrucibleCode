@@ -1,13 +1,15 @@
 #pragma once
 #include <QFont>
 #include <QList>
+#include <QPointer>
 #include <QStringList>
 #include <QWidget>
+
+#include "TerminalView.h"
 
 class QTabWidget;
 class QToolButton;
 class QMenu;
-class TerminalView;
 
 // Tabbed set of native terminals: open as many as you like, close any of them.
 class TerminalPanel : public QWidget {
@@ -25,7 +27,10 @@ public:
 
     void setWorkingDirectory(const QString& dir) { m_cwd = dir; }
     void newTerminal(const QString& workingDir = {});                         // default shell
-    void newTerminal(const Shell& shell, const QString& workingDir = {});
+    void newTerminal(const Shell& shell, const QString& workingDir = {}, const QString& label = {});
+    // Opens a terminal in workingDir, titled `title`, and types `command` into it.
+    void runCommand(const QString& title, const QString& command, const QString& workingDir);
+    QString defaultShellProgram() const;
     void closeCurrent();
     void closeAll();
     int count() const;
@@ -49,5 +54,6 @@ private:
     QToolButton* m_closeBtn = nullptr;
     QMenu* m_shellMenu = nullptr;
     QString m_cwd;
+    QPointer<TerminalView> m_lastView;
     QFont m_font;
 };

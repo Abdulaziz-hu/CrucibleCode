@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(CrucibleCode
-    VERSION 0.3.0
+    VERSION 0.6.0
     DESCRIPTION "CrucibleCode - a lightweight cross-platform IDE for C, C++ and C# built on Qt 6"
+    HOMEPAGE_URL "https://github.com/Abdulaziz-hu/CrucibleCode"
     LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -11,19 +12,31 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(CRUCIBLE_USE_KSYNTAX
-       "Use KSyntaxHighlighting (MIT) for syntax highlighting when it is installed" ON)
+       "Use KSyntaxHighlighting (MIT) for syntax highlighting (300+ languages)" ON)
+option(CRUCIBLE_BUNDLE_KSYNTAX
+       "Build KSyntaxHighlighting from source into CrucibleCode when it is not installed (needs git + network once)" ON)
+set(CRUCIBLE_KF_TAG "v6.5.0" CACHE STRING "KDE Frameworks tag used when bundling KSyntaxHighlighting")
 
-find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 6.4 REQUIRED COMPONENTS Core Gui Widgets Network)
+find_package(Qt6 6.4 QUIET OPTIONAL_COMPONENTS Svg Pdf PdfWidgets)
 qt_standard_project_setup()
 
 set(CRUCIBLE_HAVE_KSYNTAX OFF)
 if(CRUCIBLE_USE_KSYNTAX)
-    find_package(KF6SyntaxHighlighting QUIET)
+    find_package(KF6SyntaxHighlighting QUIET)                    # an installed copy wins
+    if(NOT KF6SyntaxHighlighting_FOUND AND CRUCIBLE_BUNDLE_KSYNTAX)
+        include(cmake/BundleKSyntax.cmake)
+        crucible_build_ksyntax(CRUCIBLE_KSYNTAX_PREFIX)
+        if(CRUCIBLE_KSYNTAX_PREFIX)
+            find_package(KF6SyntaxHighlighting CONFIG QUIET PATHS "${CRUCIBLE_KSYNTAX_PREFIX}" NO_DEFAULT_PATH)
+        endif()
+    endif()
     if(KF6SyntaxHighlighting_FOUND)
         set(CRUCIBLE_HAVE_KSYNTAX ON)
     endif()
 endif()
 message(STATUS "KSyntaxHighlighting: ${CRUCIBLE_HAVE_KSYNTAX}")
+message(STATUS "Qt SVG: ${Qt6Svg_FOUND}   Qt PDF viewer: ${Qt6PdfWidgets_FOUND}")
 
 qt_add_executable(cruciblecode WIN32 MACOSX_BUNDLE
     src/main.cpp
@@ -40,9 +53,38 @@ qt_add_executable(cruciblecode WIN32 MACOSX_BUNDLE
     src/TerminalView.h      src/TerminalView.cpp
     src/TerminalPanel.h     src/TerminalPanel.cpp
     src/QuickOpenDialog.h   src/QuickOpenDialog.cpp
+    src/FileViewers.h       src/FileViewers.cpp
+    src/SpellChecker.h      src/SpellChecker.cpp
+    src/RunHelper.h         src/RunHelper.cpp
+    src/AiCompletion.h      src/AiCompletion.cpp
+    src/AiSetupDialog.h     src/AiSetupDialog.cpp
+    src/LiveServer.h        src/LiveServer.cpp
+    src/GitManager.h        src/GitManager.cpp
+    src/GitPanel.h          src/GitPanel.cpp
+    src/AppInfo.h
 )
 
-target_link_libraries(cruciblecode PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+target_link_libraries(cruciblecode PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network)
+if(Qt6Svg_FOUND)
+    target_link_libraries(cruciblecode PRIVATE Qt6::Svg)          # SVG images (also makes windeployqt ship the plugin)
+    target_compile_definitions(cruciblecode PRIVATE CRUCIBLE_HAVE_SVG)
+endif()
+if(Qt6Pdf_FOUND AND Qt6PdfWidgets_FOUND)
+    target_link_libraries(cruciblecode PRIVATE Qt6::Pdf Qt6::PdfWidgets)   # PDF viewer
+    target_compile_definitions(cruciblecode PRIVATE CRUCIBLE_HAVE_PDF)
+endif()
+
+# live-preview server script (run with the system Python)
+qt_add_resources(cruciblecode "app_web"
+    PREFIX "/web"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/web"
+    FILES resources/web/live_server.py)
+
+# bundled English spelling dictionary (SCOWL word list, see resources/dict/COPYRIGHT-SCOWL.txt)
+qt_add_resources(cruciblecode "app_dict"
+    PREFIX "/dict"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/resources/dict"
+    FILES resources/dict/en_US.txt)
 
 # ---- logo / icons -----------------------------------------------------------
 qt_add_resources(cruciblecode "app_icons"

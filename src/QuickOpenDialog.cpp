@@ -38,8 +38,8 @@ void QuickOpenDialog::scan()
 {
     static const QStringList skipDirs = {".git", ".svn", ".hg", "node_modules", "CMakeFiles", "_deps",
                                          ".vs", ".idea", "obj", "build", "out", "__pycache__"};
-    static const QStringList skipExt = {"png", "jpg", "jpeg", "gif", "ico", "icns", "bmp", "exe", "dll", "so",
-                                        "dylib", "a", "lib", "o", "obj", "pdb", "zip", "7z", "gz", "tar", "pdf",
+    static const QStringList skipExt = {"exe", "dll", "so",
+                                        "dylib", "a", "lib", "o", "obj", "pdb", "zip", "7z", "gz", "tar",
                                         "ttf", "otf", "woff", "woff2", "class", "jar", "bin", "mp3", "mp4", "wav"};
     const QDir base(m_root);
     const auto walk = [&](auto&& self, const QString& dir, int depth) -> void {
