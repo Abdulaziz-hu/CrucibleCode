@@ -3,3 +3,4 @@ out/
 *.zip
 ide-notes
 .vs/
+dist/

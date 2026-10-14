@@ -112,6 +112,9 @@ have strip && strip --strip-unneeded "$BIN" || true
 install -Dm644 LICENSE "$STAGE/usr/share/doc/cruciblecode/copyright"
 [ -f THIRD_PARTY.md ] && install -Dm644 THIRD_PARTY.md "$STAGE/usr/share/doc/cruciblecode/THIRD_PARTY.md"
 
+# Remove qt.conf so it isn't caught as an unpackaged file by rpmbuild[cite: 1]
+rm -f "$STAGE/usr/bin/qt.conf"
+
 mkdir -p "$DIST"
 sums() { ( cd "$DIST" && sha256sum "$1" > "$1.sha256" ); ok "$DIST/$1"; }
 
@@ -233,7 +236,7 @@ if [ "$DO_APPIMAGE" = 1 ]; then
   # linuxdeploy itself is an AppImage: extract-and-run avoids needing FUSE (containers, CI)
   export APPIMAGE_EXTRACT_AND_RUN=1
   export QMAKE="$QMAKE_BIN"
-  export PATH="$TOOLS:$PATH"                          # so linuxdeploy finds the plugin-qt / appimage plugins
+  export NO_STRIP=1                                   # Disables internal strip execution to avoid .relr.dyn errors
   export LINUXDEPLOY_OUTPUT_VERSION="$VERSION"
   export EXTRA_QT_PLUGINS="svg;iconengines"
   export DEPLOY_PLATFORM_THEMES=1
