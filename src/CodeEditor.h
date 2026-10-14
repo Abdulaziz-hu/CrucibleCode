@@ -6,6 +6,8 @@
 #include <QTextBlock>
 #include <QTimer>
 
+#include "LspTypes.h"
+
 class AiCompletion;
 class QCompleter;
 class QStringListModel;
@@ -18,6 +20,7 @@ class CodeEditor : public QPlainTextEdit {
     Q_OBJECT
 public:
     explicit CodeEditor(QWidget* parent = nullptr);
+    ~CodeEditor() override;
 
     bool loadFile(const QString& path, QString* error = nullptr);
     bool saveFile(const QString& path, QString* error = nullptr);
@@ -41,8 +44,12 @@ public:
     bool isMarkdown() const;
     bool isWebFile() const;                       // html / css / js ...: shows the Live Preview button
     void setCaretBlinkMode(int mode);             // 0 = solid while typing, blink when idle; 1 = always blink; 2 = never
-    void zoomBy(int steps);                       // our own zoom: survives theme / settings changes
+    void zoomBy(int steps);                       // zoom every editor (one shared, persisted level)
     void resetZoom();                             // back to the font size from the settings
+    static qreal globalZoom();                    // shared zoom in points, relative to the settings font
+    static void setGlobalZoom(qreal delta);
+    static void zoomAll(int steps);
+    static void resetZoomAll();
 
     // find: highlight every match (as you type in the Find bar)
     void setSearchHighlight(const QString& text, bool caseSensitive, bool wholeWord, bool regex);
@@ -62,11 +69,27 @@ public:
     // Number of languages provided by KSyntaxHighlighting (0 when it is not built in).
     static int syntaxDefinitionCount();
 
+    // Language Server integration (driven by LspManager)
+    void setLspActive(bool on) { m_lspActive = on; }
+    bool lspActive() const { return m_lspActive; }
+    void setLspDiagnostics(const QList<LspDiagnostic>& list);
+    const QList<LspDiagnostic>& lspDiagnostics() const { return m_lspDiags; }
+    void showCompletionItems(const QList<LspCompletionItem>& items);
+    void showHoverText(const QString& text);
+    QString languageName() const;                 // extension-based id used by the LSP layer
+
+    // snippets (see Snippets.h): Tab expands a trigger word, Tab / Shift+Tab move between tab stops
+    bool snippetSessionActive() const { return m_snipActive; }
+    bool expandSnippetAtCursor();
+    void insertSnippet(const QString& body);
+
     int lineNumberAreaWidth() const;
     void lineNumberAreaPaintEvent(QPaintEvent* event);
 
 signals:
     void cursorInfoChanged(int line, int column);
+    void lspCompleteRequested(bool manual);       // Ctrl+Space or a trigger character
+    void lspDefinitionRequested();                // Ctrl+click
 
 protected:
     void resizeEvent(QResizeEvent* e) override;
@@ -77,6 +100,8 @@ protected:
     void changeEvent(QEvent* e) override;
     void focusInEvent(QFocusEvent* e) override;
     void focusOutEvent(QFocusEvent* e) override;
+    void mousePressEvent(QMouseEvent* e) override;
+    bool viewportEvent(QEvent* e) override;
 
 private slots:
     void updateLineNumberAreaWidth();
@@ -112,6 +137,33 @@ private:
     void acceptGhost();
     QString textRange(int from, int to) const;
 
+    // LSP state
+    void ensureCompleter();
+    void refreshExternalPopup();
+    bool m_lspActive = false;
+    bool m_extMode = false;                       // completer popup currently shows LSP items
+    QHash<QString, LspCompletionItem> m_extItems;
+    QList<LspDiagnostic> m_lspDiags;
+    struct LspMark { QTextCursor cursor; LspDiagnostic d; };
+    QList<LspMark> m_lspMarks;
+    QList<QTextEdit::ExtraSelection> m_lspSelections;
+
+    // snippet session state
+    struct SnipRange { int start = 0, end = 0; };
+    struct SnipStop { int index = 0; QList<SnipRange> ranges; };
+    bool snipAdjust(int pos, int removed, int added);
+    void snipGoto(int stop);
+    bool snipMove(bool backwards);
+    void endSnippet();
+    void snipSyncMirrors();
+    void snipUpdateSelections();
+    void onContentsChange(int pos, int removed, int added);
+    QList<SnipStop> m_snipStops;       // ordered: 1, 2, 3 ... then 0 (the final position)
+    SnipRange m_snipWhole;
+    int m_snipCur = -1;
+    bool m_snipActive = false, m_snipSync = false, m_snipDirty = false;
+    QList<QTextEdit::ExtraSelection> m_snipSelections;
+
     LineNumberArea* m_gutter = nullptr;
     QSyntaxHighlighter* m_highlighter = nullptr;
     QString m_path;
@@ -124,7 +176,8 @@ private:
     bool m_bom = false;
 
     QFont m_baseFont;                                   // font from the settings
-    qreal m_zoomDelta = 0;                              // zoom in points, relative to m_baseFont
+    static qreal s_zoom;
+    static bool s_zoomLoaded;
     bool m_applyingFont = false;
 
     QList<QTextEdit::ExtraSelection> m_searchSelections;

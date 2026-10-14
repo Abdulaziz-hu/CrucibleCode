@@ -5,6 +5,10 @@
 #include <QMainWindow>
 
 class AiCompletion;
+class LspManager;
+class PerfMonitor;
+class Updater;
+struct ReleaseInfo;
 class GitManager;
 class GitPanel;
 class LiveServer;
@@ -70,6 +74,16 @@ private:
     void refreshStartupItems();
     void applyEditorSettings();
     void setTheme(ThemeManager::Id id);
+    void newProject();
+    void checkForUpdates(bool manual);
+    void showUpdateDialog(const ReleaseInfo& release);
+    void applyUpdate(const QString& file);
+    bool saveOrDiscardAll();
+    void applySaveTransforms(CodeEditor* e);
+    void registerShortcuts();
+    void refreshProblems();
+    void updateLspUi();
+    void insertSnippetDialog();
 
     // build
     void appendOutput(const QString& text, BuildManager::Kind kind);
@@ -173,6 +187,18 @@ private:
     QAction *m_actSettings = nullptr, *m_actAbout = nullptr, *m_actZoomIn = nullptr,
             *m_actZoomOut = nullptr, *m_actZoomReset = nullptr, *m_actThemeDark = nullptr,
             *m_actThemeLight = nullptr;
+
+    LspManager* m_lsp = nullptr;
+    PerfMonitor* m_perf = nullptr;
+    Updater* m_updater = nullptr;
+    QLabel* m_perfLabel = nullptr;
+    QLabel* m_lspLabel = nullptr;
+    QTreeWidget* m_problems = nullptr;
+    QDockWidget* m_problemsDock = nullptr;
+    bool m_updateCheckRunning = false;
+    QAction *m_actThemeCustom = nullptr, *m_actEditTheme = nullptr, *m_actNewProject = nullptr, *m_actTemplates = nullptr,
+            *m_actSnippets = nullptr, *m_actInsertSnippet = nullptr, *m_actGotoDef = nullptr, *m_actHover = nullptr,
+            *m_actCheckUpdates = nullptr, *m_actPerf = nullptr;
 
     BuildManager* m_build = nullptr;
     QString m_root;

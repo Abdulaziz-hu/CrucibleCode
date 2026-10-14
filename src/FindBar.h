@@ -33,6 +33,7 @@ private:
     void applyHighlight();
     void updateStatus();
     void setReplaceVisible(bool on);
+    void refreshIcons();
     bool selectionMatches(const QString& selected) const;
     void replaceOne();
     void replaceAll();
@@ -45,6 +46,7 @@ private:
 
     QPointer<CodeEditor> m_editor;
     QToolButton* m_toggle = nullptr;
+    QToolButton* m_close = nullptr;
     QComboBox* m_find = nullptr;
     QComboBox* m_replace = nullptr;
     QToolButton* m_case = nullptr;

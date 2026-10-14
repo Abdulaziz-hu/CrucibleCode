@@ -7,6 +7,16 @@
 #include "GitPanel.h"
 #include "FindBar.h"
 #include "LiveServer.h"
+#include "LspManager.h"
+#include "PerfMonitor.h"
+#include "ProjectTemplates.h"
+#include "ShortcutManager.h"
+#include "SnippetDialog.h"
+#include "Snippets.h"
+#include "TemplateDialogs.h"
+#include "ThemeEditorDialog.h"
+#include "UpdateDialog.h"
+#include "Updater.h"
 #include "QuickOpenDialog.h"
 #include "RunHelper.h"
 #include "SearchPanel.h"
@@ -19,6 +29,8 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QCloseEvent>
+#include <QDateTime>
+#include <QTextBlock>
 #include <QCryptographicHash>
 #include <QComboBox>
 #include <QDesktopServices>
@@ -74,6 +86,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
 
     m_build = new BuildManager(this);
     m_ai = new AiCompletion(this);
+    m_lsp = new LspManager(this);
+    m_perf = new PerfMonitor(this);
+    m_updater = new Updater(this);
     m_git = new GitManager(this);
     connect(m_git, &GitManager::statusChanged, this, &MainWindow::updateGitUi);
     connect(m_git, &GitManager::output, this, [this](const QString& t) { appendOutput(QStringLiteral("[git] ") + t, BuildManager::Info); });
@@ -157,7 +172,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             else if (auto* dv = qobject_cast<DiffViewer*>(m_tabs->widget(i)))
                 for (auto* h : dv->document()->findChildren<QSyntaxHighlighter*>()) h->rehighlight();
         if (m_themeGroup) {
-            (ThemeManager::instance().isDark() ? m_actThemeDark : m_actThemeLight)->setChecked(true);
+            const auto id = ThemeManager::instance().current();
+            (id == ThemeManager::Custom ? m_actThemeCustom : ThemeManager::instance().isDark() ? m_actThemeDark : m_actThemeLight)->setChecked(true);
         }
         m_terminals->applyTheme();
         // Re-render Error List coloring
@@ -177,7 +193,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
     QSettings s;
     m_configCombo->setCurrentText(s.value(QStringLiteral("cmake/config"), QStringLiteral("Debug")).toString());
     m_actWordWrap->setChecked(s.value(QStringLiteral("editor/wordWrap"), false).toBool());
+    registerShortcuts();
+    connect(m_perf, &PerfMonitor::updated, this, [this] {
+        m_perfLabel->setText(m_perf->summary());
+        m_perfLabel->setToolTip(m_perf->details());
+    });
+    connect(m_lsp, &LspManager::statusChanged, this, &MainWindow::updateLspUi);
+    connect(m_lsp, &LspManager::problemsChanged, this, &MainWindow::refreshProblems);
+    connect(m_lsp, &LspManager::message, this, [this](const QString& t) { statusBar()->showMessage(t, 6000); });
+    connect(m_lsp, &LspManager::locationRequested, this, [this](const QString& p, int l, int col) { openFile(p, l, col); });
     applyEditorSettings();
+    if (Updater::autoCheckEnabled()) {
+        const QDateTime last = QSettings().value(QStringLiteral("update/lastCheck")).toDateTime();
+        if (!last.isValid() || last.secsTo(QDateTime::currentDateTimeUtc()) > 3600)
+            QTimer::singleShot(5000, this, [this] { checkForUpdates(false); });
+    }
     restoreGeometry(s.value(QStringLiteral("window/geometry")).toByteArray());
     restoreState(s.value(QStringLiteral("window/state")).toByteArray());
     updateRecentMenu();
@@ -249,18 +279,21 @@ void MainWindow::createActions()
                        QKeySequence(Qt::CTRL | Qt::Key_Slash));
 
     // View
-    m_actZoomIn = act(tr("Zoom &In"), withEditor([](CodeEditor* e) { e->zoomBy(1); }), QKeySequence::ZoomIn);
-    m_actZoomOut = act(tr("Zoom &Out"), withEditor([](CodeEditor* e) { e->zoomBy(-1); }), QKeySequence::ZoomOut);
-    m_actZoomReset = act(tr("&Reset Zoom"), withEditor([](CodeEditor* e) { e->resetZoom(); }), QKeySequence(Qt::CTRL | Qt::Key_0));
+    m_actZoomIn = act(tr("Zoom &In"), [] { CodeEditor::zoomAll(1); }, QKeySequence::ZoomIn);
+    m_actZoomOut = act(tr("Zoom &Out"), [] { CodeEditor::zoomAll(-1); }, QKeySequence::ZoomOut);
+    m_actZoomReset = act(tr("&Reset Zoom"), [] { CodeEditor::resetZoomAll(); }, QKeySequence(Qt::CTRL | Qt::Key_0));
 
     m_themeGroup = new QActionGroup(this);
     m_actThemeDark = act(tr("Dark Grey"), [this] { setTheme(ThemeManager::DarkGrey); });
     m_actThemeLight = act(tr("Light"), [this] { setTheme(ThemeManager::Light); });
-    for (QAction* a : {m_actThemeDark, m_actThemeLight}) {
+    m_actThemeCustom = act(tr("Custom Theme"), [this] { setTheme(ThemeManager::Custom); });
+    m_actEditTheme = act(tr("Customize Theme..."), [this] { ThemeEditorDialog(this).exec(); });
+    for (QAction* a : {m_actThemeDark, m_actThemeLight, m_actThemeCustom}) {
         a->setCheckable(true);
         m_themeGroup->addAction(a);
     }
-    (ThemeManager::instance().isDark() ? m_actThemeDark : m_actThemeLight)->setChecked(true);
+    const auto curTheme = ThemeManager::instance().current();
+    (curTheme == ThemeManager::Custom ? m_actThemeCustom : ThemeManager::instance().isDark() ? m_actThemeDark : m_actThemeLight)->setChecked(true);
 
     m_actWordWrap = act(tr("&Word Wrap"), [this] {
         const bool on = m_actWordWrap->isChecked();
@@ -324,11 +357,28 @@ void MainWindow::createActions()
     m_actStop = act(tr("&Stop"), [this] { m_runAfterBuild = false; m_build->stop(); }, QKeySequence(Qt::SHIFT | Qt::Key_F5));
     m_actRun = act(tr("&Run"), [this] { runStartup(); }, QKeySequence(Qt::Key_F5));
 
+    // Projects, snippets, language server
+    m_actNewProject = act(tr("New &Project..."), [this] { newProject(); }, QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_N));
+    m_actTemplates = act(tr("Project &Templates..."), [this] { TemplateManagerDialog(m_root, this).exec(); });
+    m_actSnippets = act(tr("&Snippets..."), [this] { SnippetDialog(this).exec(); });
+    m_actInsertSnippet = act(tr("Insert S&nippet..."), [this] { insertSnippetDialog(); }, QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_J));
+    m_actGotoDef = act(tr("Go to &Definition"), withEditor([this](CodeEditor* e) { m_lsp->gotoDefinition(e); }), QKeySequence(Qt::Key_F12));
+    m_actHover = act(tr("Show &Symbol Info"), withEditor([this](CodeEditor* e) { m_lsp->hover(e); }),
+                     QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Space));
+    m_actPerf = act(tr("&Performance Monitor"), [this] {
+        QSettings().setValue(QStringLiteral("perf/enabled"), m_actPerf->isChecked());
+        m_perf->setEnabled(m_actPerf->isChecked());
+        m_perfLabel->setVisible(m_actPerf->isChecked());
+    });
+    m_actPerf->setCheckable(true);
+    m_actCheckUpdates = act(tr("Check for &Updates..."), [this] { checkForUpdates(true); });
+
     // Tools / Help
     m_actSettings = act(tr("&Settings..."), [this] {
         SettingsDialog dlg(m_ai, this);
+        connect(&dlg, &SettingsDialog::checkForUpdatesRequested, this, [this] { checkForUpdates(true); });
         if (dlg.exec() == QDialog::Accepted) applyEditorSettings();
-    });
+    }, QKeySequence(Qt::CTRL | Qt::Key_Comma));
     m_actAbout = act(tr("&About CrucibleCode"), [this] { showAbout(); });
 }
 
@@ -336,6 +386,7 @@ void MainWindow::createMenus()
 {
     QMenu* file = menuBar()->addMenu(tr("&File"));
     file->addAction(m_actNew);
+    file->addAction(m_actNewProject);
     file->addAction(m_actOpenFile);
     file->addAction(m_actOpenFolder);
     m_recentMenu = file->addMenu(tr("Recent &Folders"));
@@ -363,6 +414,10 @@ void MainWindow::createMenus()
     edit->addAction(m_actGoTo);
     edit->addSeparator();
     edit->addAction(m_actComment);
+    edit->addSeparator();
+    edit->addAction(m_actInsertSnippet);
+    edit->addAction(m_actGotoDef);
+    edit->addAction(m_actHover);
 
     QMenu* view = menuBar()->addMenu(tr("&View"));
     view->setObjectName(QStringLiteral("viewMenu"));
@@ -374,6 +429,9 @@ void MainWindow::createMenus()
     QMenu* theme = view->addMenu(tr("&Theme"));
     theme->addAction(m_actThemeDark);
     theme->addAction(m_actThemeLight);
+    theme->addAction(m_actThemeCustom);
+    theme->addSeparator();
+    theme->addAction(m_actEditTheme);
     view->addSeparator();
 
     QMenu* gitMenu = menuBar()->addMenu(tr("&Git"));
@@ -404,6 +462,9 @@ void MainWindow::createMenus()
     build->addAction(m_actStop);
 
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
+    tools->addAction(m_actSnippets);
+    tools->addAction(m_actTemplates);
+    tools->addSeparator();
     tools->addAction(m_actSettings);
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));
@@ -412,6 +473,7 @@ void MainWindow::createMenus()
     QAction* actIssue = help->addAction(tr("&Report an Issue"));
     connect(actIssue, &QAction::triggered, this, [] { QDesktopServices::openUrl(QUrl(QString::fromLatin1(kIssuesUrl))); });
     help->addSeparator();
+    help->addAction(m_actCheckUpdates);
     help->addAction(m_actAbout);
     QAction* aboutQt = help->addAction(tr("About &Qt"));
     connect(aboutQt, &QAction::triggered, qApp, &QApplication::aboutQt);
@@ -517,6 +579,25 @@ void MainWindow::createDocks()
     m_errorDock->setWidget(m_errors);
     addDockWidget(Qt::BottomDockWidgetArea, m_errorDock);
 
+    // Problems reported by language servers
+    m_problems = new QTreeWidget;
+    m_problems->setColumnCount(4);
+    m_problems->setHeaderLabels({tr("Severity"), tr("Description"), tr("File"), tr("Line")});
+    m_problems->setRootIsDecorated(false);
+    m_problems->setUniformRowHeights(true);
+    m_problems->header()->setStretchLastSection(false);
+    m_problems->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_problems->header()->setSectionResizeMode(1, QHeaderView::Stretch);
+    m_problems->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_problems->header()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    connect(m_problems, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem* it) {
+        openFile(it->data(0, Qt::UserRole).toString(), it->data(0, Qt::UserRole + 1).toInt(), it->data(0, Qt::UserRole + 2).toInt());
+    });
+    m_problemsDock = new QDockWidget(tr("Problems"), this);
+    m_problemsDock->setObjectName(QStringLiteral("problemsDock"));
+    m_problemsDock->setWidget(m_problems);
+    addDockWidget(Qt::BottomDockWidgetArea, m_problemsDock);
+
     // Find in files
     m_search = new SearchPanel;
     connect(m_search, &SearchPanel::openRequested, this, [this](const QString& p, int l, int c) { openFile(p, l, c); });
@@ -557,14 +638,15 @@ void MainWindow::createDocks()
     });
 
     tabifyDockWidget(m_outputDock, m_errorDock);
-    tabifyDockWidget(m_errorDock, m_searchDock);
+    tabifyDockWidget(m_errorDock, m_problemsDock);
+    tabifyDockWidget(m_problemsDock, m_searchDock);
     tabifyDockWidget(m_searchDock, m_terminalDock);
     m_outputDock->raise();
 
     // Default sizes: used by "double-click a splitter" and View > Reset Panel Sizes.
     m_explorerDock->setProperty("defaultSize", 260);
     m_mdDock->setProperty("defaultSize", 420);
-    for (QDockWidget* d : {m_outputDock, m_errorDock, m_searchDock, m_terminalDock})
+    for (QDockWidget* d : {m_outputDock, m_errorDock, m_problemsDock, m_searchDock, m_terminalDock})
         d->setProperty("defaultSize", 220);
     resetPanelSizes();
 
@@ -574,11 +656,13 @@ void MainWindow::createDocks()
         view->addAction(m_gitDock->toggleViewAction());
         view->addAction(m_outputDock->toggleViewAction());
         view->addAction(m_errorDock->toggleViewAction());
+        view->addAction(m_problemsDock->toggleViewAction());
         view->addAction(m_searchDock->toggleViewAction());
         view->addAction(m_terminalDock->toggleViewAction());
         view->addAction(m_mdDock->toggleViewAction());
         view->addSeparator();
         view->addAction(m_actMdPreview);
+        view->addAction(m_actPerf);
         view->addAction(m_actResetLayout);
     }
 }
@@ -588,6 +672,12 @@ void MainWindow::createStatusBar()
     m_posLabel = new QLabel;
     m_eolLabel = new QLabel;
     m_encLabel = new QLabel(QStringLiteral("UTF-8"));
+    m_perfLabel = new QLabel;
+    m_perfLabel->hide();
+    statusBar()->addPermanentWidget(m_perfLabel);
+    m_lspLabel = new QLabel;
+    m_lspLabel->hide();
+    statusBar()->addPermanentWidget(m_lspLabel);
     m_gitLabel = new QLabel;
     m_gitLabel->hide();
     statusBar()->addPermanentWidget(m_gitLabel);
@@ -720,6 +810,7 @@ CodeEditor* MainWindow::openTextEditor(const QString& abs, int line, int column)
     const int idx = m_tabs->addTab(e, e->displayName());
     watchEditor(e);
     refreshGitMarks(e);
+    m_lsp->attach(e);
     m_tabs->setTabToolTip(idx, abs);
     m_tabs->setCurrentIndex(idx);
     if (line > 0) e->goTo(line, column > 0 ? column : 1);
@@ -870,11 +961,13 @@ bool MainWindow::saveEditor(CodeEditor* e, bool saveAs)
         path = QFileDialog::getSaveFileName(this, tr("Save File"), start);
         if (path.isEmpty()) return false;
     }
+    applySaveTransforms(e);
     QString err;
     if (!e->saveFile(path, &err)) {
         QMessageBox::warning(this, tr("Save File"), tr("Could not save %1:\n%2").arg(path, err));
         return false;
     }
+    m_lsp->notifySaved(e);
     updateTabTitle(e);
     watchEditor(e);
     m_git->requestRefresh(200);
@@ -1028,6 +1121,216 @@ void MainWindow::applyEditorSettings()
     m_build->setCMakePath(s.value(QStringLiteral("cmake/path")).toString());
     m_build->setGenerator(s.value(QStringLiteral("cmake/generator")).toString());
     m_build->setExtraArguments(s.value(QStringLiteral("cmake/extraArgs")).toString());
+
+    const bool perf = SettingsDialog::perfMonitorEnabled();
+    m_actPerf->setChecked(perf);
+    m_perf->setEnabled(perf);
+    m_perfLabel->setVisible(perf);
+    m_lsp->reloadSettings();
+    updateLspUi();
+}
+
+// ---------------------------------------------------------------------------------
+// Projects, updates, language server, shortcuts
+// ---------------------------------------------------------------------------------
+
+void MainWindow::newProject()
+{
+    NewProjectDialog dlg(QString(), this);
+    if (dlg.exec() != QDialog::Accepted) return;
+    const QString dir = dlg.createdPath();
+    openFolder(dir);
+    if (m_root != QDir::cleanPath(QFileInfo(dir).absoluteFilePath())) return;      // user cancelled the unsaved-changes prompt
+    for (const QString& rel : {QStringLiteral("src/main.cpp"), QStringLiteral("src/main.c"), QStringLiteral("Program.cs"),
+                               QStringLiteral("index.html"), QStringLiteral("README.md")}) {
+        if (QFileInfo::exists(QDir(dir).filePath(rel))) { openFile(QDir(dir).filePath(rel)); break; }
+    }
+}
+
+void MainWindow::applySaveTransforms(CodeEditor* e)
+{
+    const bool trim = SettingsDialog::trimTrailingWhitespace(), nl = SettingsDialog::ensureFinalNewline();
+    if (!trim && !nl) return;
+    QTextCursor c(e->document());
+    c.beginEditBlock();
+    if (trim) {
+        for (QTextBlock b = e->document()->begin(); b.isValid(); b = b.next()) {
+            const QString t = b.text();
+            int end = int(t.size());
+            while (end > 0 && (t.at(end - 1) == QLatin1Char(' ') || t.at(end - 1) == QLatin1Char('\t'))) --end;
+            if (end < t.size()) {
+                QTextCursor tc(b);
+                tc.setPosition(b.position() + end);
+                tc.setPosition(b.position() + int(t.size()), QTextCursor::KeepAnchor);
+                tc.removeSelectedText();
+            }
+        }
+    }
+    if (nl && !e->document()->lastBlock().text().isEmpty()) {
+        QTextCursor tc(e->document());
+        tc.movePosition(QTextCursor::End);
+        tc.insertText(QStringLiteral("\n"));
+    }
+    c.endEditBlock();
+}
+
+bool MainWindow::saveOrDiscardAll()
+{
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        CodeEditor* ed = editorAt(i);
+        if (!ed) continue;
+        m_tabs->setCurrentIndex(i);
+        if (!maybeSave(ed)) return false;
+        ed->document()->setModified(false);          // discarded changes must not prompt again on close
+    }
+    return true;
+}
+
+void MainWindow::checkForUpdates(bool manual)
+{
+    if (m_updateCheckRunning) return;
+    m_updateCheckRunning = true;
+    if (manual) statusBar()->showMessage(tr("Checking for updates..."), 4000);
+    disconnect(m_updater, &Updater::checkFinished, nullptr, nullptr);
+    connect(m_updater, &Updater::checkFinished, this,
+            [this](bool wasManual, bool available, const ReleaseInfo& rel, const QString& error) {
+        m_updateCheckRunning = false;
+        if (!error.isEmpty()) {
+            if (wasManual) QMessageBox::warning(this, tr("Check for Updates"), tr("Could not check for updates:\n%1").arg(error));
+            return;
+        }
+        if (!available) {
+            if (wasManual) QMessageBox::information(this, tr("Check for Updates"),
+                tr("You are up to date (version %1).").arg(QCoreApplication::applicationVersion()));
+            return;
+        }
+        if (!wasManual && Updater::skippedVersion() == rel.tag) return;
+        showUpdateDialog(rel);
+    });
+    m_updater->check(manual);
+}
+
+void MainWindow::showUpdateDialog(const ReleaseInfo& release)
+{
+    auto* dlg = new UpdateDialog(m_updater, release, this);
+    dlg->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dlg, &UpdateDialog::applyRequested, this, &MainWindow::applyUpdate);
+    dlg->open();
+}
+
+void MainWindow::applyUpdate(const QString& file)
+{
+    if (!saveOrDiscardAll()) {
+        statusBar()->showMessage(tr("Update postponed: unsaved changes."), 5000);
+        return;
+    }
+    QString err;
+    if (!m_updater->applyDownloaded(file, &err)) {
+        QMessageBox::warning(this, tr("Update"), err);
+        return;
+    }
+    close();    // the helper waits for this process to exit, replaces the files and starts the new version
+}
+
+void MainWindow::insertSnippetDialog()
+{
+    CodeEditor* e = currentEditor();
+    if (!e) return;
+    const QList<Snippet> list = SnippetManager::instance().forFile(e->isUntitled() ? e->displayName() : e->filePath());
+    QStringList items;
+    for (const Snippet& s : list) items << (s.description.isEmpty() ? s.trigger : s.trigger + QStringLiteral(" - ") + s.description);
+    bool ok = false;
+    const QString pick = QInputDialog::getItem(this, tr("Insert Snippet"), tr("Snippet:"), items, 0, false, &ok);
+    if (!ok) return;
+    const int i = int(items.indexOf(pick));
+    if (i >= 0) { e->insertSnippet(list.at(i).body); e->setFocus(); }
+}
+
+void MainWindow::updateLspUi()
+{
+    const QString t = m_lsp->statusText();
+    m_lspLabel->setText(t);
+    m_lspLabel->setToolTip(m_lsp->statusTooltip());
+    m_lspLabel->setVisible(!t.isEmpty());
+}
+
+void MainWindow::refreshProblems()
+{
+    m_problems->clear();
+    const ThemeColors& tc = ThemeManager::instance().colors();
+    const auto problems = m_lsp->problems();
+    int total = 0;
+    for (auto it = problems.begin(); it != problems.end(); ++it) {
+        for (const LspDiagnostic& d : it.value()) {
+            if (d.severity > 3) continue;
+            const QString sev = d.severity == 1 ? tr("Error") : d.severity == 2 ? tr("Warning") : tr("Info");
+            auto* item = new QTreeWidgetItem({sev, d.message.section(QLatin1Char('\n'), 0, 0), QFileInfo(it.key()).fileName(), QString::number(d.line + 1)});
+            item->setForeground(0, d.severity == 1 ? tc.error : d.severity == 2 ? tc.warning : tc.textDim);
+            item->setData(0, Qt::UserRole, it.key());
+            item->setData(0, Qt::UserRole + 1, d.line + 1);
+            item->setData(0, Qt::UserRole + 2, d.startChar + 1);
+            item->setToolTip(1, d.message);
+            m_problems->addTopLevelItem(item);
+            ++total;
+        }
+    }
+    m_problemsDock->setWindowTitle(total ? tr("Problems (%1)").arg(total) : tr("Problems"));
+}
+
+void MainWindow::registerShortcuts()
+{
+    auto& sm = ShortcutManager::instance();
+    const QString file = tr("File"), edit = tr("Edit"), view = tr("View"), build = tr("Build"), tools = tr("Tools"), code = tr("Code");
+    sm.add(QStringLiteral("file.new"), m_actNew, file);
+    sm.add(QStringLiteral("file.newProject"), m_actNewProject, file);
+    sm.add(QStringLiteral("file.open"), m_actOpenFile, file);
+    sm.add(QStringLiteral("file.openFolder"), m_actOpenFolder, file);
+    sm.add(QStringLiteral("file.save"), m_actSave, file);
+    sm.add(QStringLiteral("file.saveAs"), m_actSaveAs, file);
+    sm.add(QStringLiteral("file.saveAll"), m_actSaveAll, file);
+    sm.add(QStringLiteral("file.closeTab"), m_actClose, file);
+    sm.add(QStringLiteral("file.exit"), m_actExit, file);
+    sm.add(QStringLiteral("edit.undo"), m_actUndo, edit);
+    sm.add(QStringLiteral("edit.redo"), m_actRedo, edit);
+    sm.add(QStringLiteral("edit.cut"), m_actCut, edit);
+    sm.add(QStringLiteral("edit.copy"), m_actCopy, edit);
+    sm.add(QStringLiteral("edit.paste"), m_actPaste, edit);
+    sm.add(QStringLiteral("edit.selectAll"), m_actSelectAll, edit);
+    sm.add(QStringLiteral("edit.find"), m_actFind, edit);
+    sm.add(QStringLiteral("edit.replace"), m_actReplace, edit);
+    sm.add(QStringLiteral("edit.findInFiles"), m_actFindInFiles, edit);
+    sm.add(QStringLiteral("edit.quickOpen"), m_actQuickOpen, edit);
+    sm.add(QStringLiteral("edit.goToLine"), m_actGoTo, edit);
+    sm.add(QStringLiteral("edit.comment"), m_actComment, edit);
+    sm.add(QStringLiteral("code.insertSnippet"), m_actInsertSnippet, code);
+    sm.add(QStringLiteral("code.gotoDefinition"), m_actGotoDef, code);
+    sm.add(QStringLiteral("code.symbolInfo"), m_actHover, code);
+    sm.add(QStringLiteral("view.zoomIn"), m_actZoomIn, view);
+    sm.add(QStringLiteral("view.zoomOut"), m_actZoomOut, view);
+    sm.add(QStringLiteral("view.zoomReset"), m_actZoomReset, view);
+    sm.add(QStringLiteral("view.wordWrap"), m_actWordWrap, view);
+    sm.add(QStringLiteral("view.markdownPreview"), m_actMdPreview, view);
+    sm.add(QStringLiteral("view.perfMonitor"), m_actPerf, view);
+    sm.add(QStringLiteral("view.explorer"), m_explorerDock->toggleViewAction(), view);
+    sm.add(QStringLiteral("view.output"), m_outputDock->toggleViewAction(), view);
+    sm.add(QStringLiteral("view.errorList"), m_errorDock->toggleViewAction(), view);
+    sm.add(QStringLiteral("view.problems"), m_problemsDock->toggleViewAction(), view);
+    sm.add(QStringLiteral("git.sourceControl"), m_actSourceControl, tr("Git"));
+    sm.add(QStringLiteral("web.liveToggle"), m_actLiveToggle, tr("Web"));
+    sm.add(QStringLiteral("web.liveOpen"), m_actLiveOpen, tr("Web"));
+    sm.add(QStringLiteral("terminal.new"), m_actNewTerminal, tr("Terminal"));
+    sm.add(QStringLiteral("terminal.toggle"), m_actToggleTerminal, tr("Terminal"));
+    sm.add(QStringLiteral("build.configure"), m_actConfigure, build);
+    sm.add(QStringLiteral("build.build"), m_actBuild, build);
+    sm.add(QStringLiteral("build.rebuild"), m_actRebuild, build);
+    sm.add(QStringLiteral("build.clean"), m_actClean, build);
+    sm.add(QStringLiteral("build.run"), m_actRun, build);
+    sm.add(QStringLiteral("build.runFile"), m_actRunFile, build);
+    sm.add(QStringLiteral("build.stop"), m_actStop, build);
+    sm.add(QStringLiteral("tools.settings"), m_actSettings, tools);
+    sm.add(QStringLiteral("tools.snippets"), m_actSnippets, tools);
+    sm.add(QStringLiteral("tools.templates"), m_actTemplates, tools);
+    sm.add(QStringLiteral("help.checkUpdates"), m_actCheckUpdates, tr("Help"));
 }
 
 void MainWindow::setTheme(ThemeManager::Id id)
@@ -1059,6 +1362,7 @@ void MainWindow::openFolder(const QString& path)
         m_findBar->hide();
     }
     m_root = newRoot;
+    m_lsp->setProjectRoot(m_root);
 
     const QModelIndex rootIdx = m_fs->setRootPath(m_root);
     m_tree->setRootIndex(rootIdx);
@@ -1349,6 +1653,7 @@ void MainWindow::closeEvent(QCloseEvent* e)
     m_build->stop();
     m_ai->stop();
     m_live->stop();
+    m_lsp->shutdownAll();
     saveSession();
     QSettings s;
     s.setValue(QStringLiteral("window/geometry"), saveGeometry());

@@ -21,6 +21,9 @@
 #include <QPainter>
 #include <QSaveFile>
 #include <QScrollBar>
+#include <QToolTip>
+#include <QMouseEvent>
+#include <QSettings>
 #include <QTextCursor>
 
 #ifdef CRUCIBLE_HAVE_KSYNTAX
@@ -59,8 +62,42 @@ private:
     CodeEditor* m_editor;
 };
 
+// ---- global zoom -------------------------------------------------------------------------------
+// One zoom level (in points, relative to the font from the settings) is shared by every editor
+// and persisted, so tabs, newly opened files and later sessions all use the same text size.
+static QList<CodeEditor*>& allEditors()
+{
+    static QList<CodeEditor*> list;
+    return list;
+}
+
+qreal CodeEditor::s_zoom = 0;
+bool CodeEditor::s_zoomLoaded = false;
+
+qreal CodeEditor::globalZoom()
+{
+    if (!s_zoomLoaded) {
+        s_zoom = QSettings().value(QStringLiteral("editor/zoomDelta"), 0.0).toDouble();
+        s_zoomLoaded = true;
+    }
+    return s_zoom;
+}
+
+void CodeEditor::setGlobalZoom(qreal delta)
+{
+    delta = qBound<qreal>(-30.0, delta, 60.0);
+    s_zoom = delta;
+    s_zoomLoaded = true;
+    QSettings().setValue(QStringLiteral("editor/zoomDelta"), delta);
+    for (CodeEditor* e : allEditors()) e->applyFont();
+}
+
+void CodeEditor::zoomAll(int steps) { setGlobalZoom(globalZoom() + steps); }
+void CodeEditor::resetZoomAll() { setGlobalZoom(0); }
+
 CodeEditor::CodeEditor(QWidget* parent) : QPlainTextEdit(parent)
 {
+    allEditors().append(this);
     setObjectName(QStringLiteral("codeEditor"));
     setLineWrapMode(QPlainTextEdit::NoWrap);
     setFrameStyle(QFrame::NoFrame);
@@ -105,9 +142,19 @@ CodeEditor::CodeEditor(QWidget* parent) : QPlainTextEdit(parent)
         if (!m_ghost.isEmpty() && textCursor().position() != m_ghostPos) clearGhost();
     });
 
+    connect(document(), &QTextDocument::contentsChange, this, &CodeEditor::onContentsChange);
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, [this] {
+        if (m_snipActive && !m_snipSync) {
+            const int p = textCursor().position();
+            if (p < m_snipWhole.start || p > m_snipWhole.end) endSnippet();
+        }
+    });
+
     updateLineNumberAreaWidth();
     applyTheme();
 }
+
+CodeEditor::~CodeEditor() { allEditors().removeAll(this); }
 
 QString CodeEditor::displayName() const
 {
@@ -212,7 +259,7 @@ bool CodeEditor::isMarkdown() const
 QFont CodeEditor::zoomedFont() const
 {
     QFont f = m_baseFont;
-    if (f.pointSizeF() > 0) f.setPointSizeF(qMax<qreal>(2.0, f.pointSizeF() + m_zoomDelta));
+    if (f.pointSizeF() > 0) f.setPointSizeF(qMax<qreal>(2.0, f.pointSizeF() + globalZoom()));
     return f;
 }
 
@@ -236,15 +283,11 @@ void CodeEditor::setEditorFont(const QFont& f)
 void CodeEditor::zoomBy(int steps)
 {
     if (m_baseFont.pointSizeF() <= 0) return;
-    m_zoomDelta = qBound<qreal>(2.0 - m_baseFont.pointSizeF(), m_zoomDelta + steps, 60.0);
-    applyFont();
+    const qreal lowest = 2.0 - m_baseFont.pointSizeF();      // never smaller than 2 pt
+    setGlobalZoom(qMax(lowest, globalZoom() + steps));        // applies to all open editors
 }
 
-void CodeEditor::resetZoom()
-{
-    m_zoomDelta = 0;
-    applyFont();
-}
+void CodeEditor::resetZoom() { resetZoomAll(); }
 
 // A style sheet or theme change can reset the widget font behind our back: put the zoomed font back.
 void CodeEditor::changeEvent(QEvent* e)
@@ -518,6 +561,8 @@ void CodeEditor::rebuildExtraSelections()
     all += m_searchSelections;
     all += m_bracketSelections;
     all += m_spellSelections;
+    all += m_snipSelections;
+    all += m_lspSelections;
     setExtraSelections(all);
 }
 
@@ -728,6 +773,12 @@ void CodeEditor::editKey(QKeyEvent* e)
         }
     }
 
+    if (m_snipActive && !isReadOnly()) {
+        if (e->key() == Qt::Key_Tab && plain) { if (snipMove(false)) return; }
+        if (e->key() == Qt::Key_Backtab) { if (snipMove(true)) return; }
+        if (e->key() == Qt::Key_Escape) { endSnippet(); return; }
+    }
+    if (e->key() == Qt::Key_Tab && plain && !isReadOnly() && !m_snipActive && expandSnippetAtCursor()) return;
     if (e->key() == Qt::Key_Tab && plain) {
         const QTextCursor c = textCursor();
         if (c.hasSelection() && document()->findBlock(c.selectionStart()) != document()->findBlock(c.selectionEnd()))
@@ -766,9 +817,13 @@ void CodeEditor::keyPressEvent(QKeyEvent* e)
         if (e->key() == Qt::Key_Tab && e->modifiers() == Qt::NoModifier) { acceptGhost(); return; }
         if (e->key() == Qt::Key_Escape) { clearGhost(); return; }
     }
-    if (m_suggest && e->key() == Qt::Key_Space && (e->modifiers() & Qt::ControlModifier)) {
-        showCompletion(true);
-        return;
+    if (e->key() == Qt::Key_Space && (e->modifiers() & Qt::ControlModifier)) {
+        if (m_lspActive) { emit lspCompleteRequested(true); return; }
+        if (m_suggest) { showCompletion(true); return; }
+    }
+    if (m_extMode && (!m_completer || !m_completer->popup()->isVisible())) {      // popup was dismissed
+        m_extMode = false;
+        if (m_suggest) rebuildWords();
     }
 
     if (m_caretMode == 0) caretSolid();
@@ -777,7 +832,18 @@ void CodeEditor::keyPressEvent(QKeyEvent* e)
     if (typed == QLatin1String(">")) autoCloseTag();
 
     const bool wordChar = !typed.isEmpty() && (typed.at(0).isLetterOrNumber() || typed.at(0) == QLatin1Char('_'));
-    if (m_suggest && m_completer) {
+    bool handledExt = false;
+    if (m_extMode && m_completer && m_completer->popup()->isVisible()) {
+        handledExt = true;
+        if (wordChar || e->key() == Qt::Key_Backspace) refreshExternalPopup();
+        else { m_completer->popup()->hide(); m_extMode = false; handledExt = false; if (m_suggest) rebuildWords(); }
+    }
+    if (m_lspActive && !isReadOnly()) {
+        const QString before = textCursor().block().text().left(textCursor().positionInBlock());
+        if (typed == QLatin1String(".") || (typed == QLatin1String(">") && before.endsWith(QLatin1String("->")))
+            || (typed == QLatin1String(":") && before.endsWith(QLatin1String("::")))) emit lspCompleteRequested(false);
+    }
+    if (!handledExt && m_suggest && m_completer && !m_extMode) {
         if (wordChar || e->key() == Qt::Key_Backspace) showCompletion(false);
         else m_completer->popup()->hide();
     }
@@ -965,27 +1031,31 @@ void CodeEditor::contextMenuEvent(QContextMenuEvent* e)
 //  Code suggestions (word / keyword completion popup)
 // ---------------------------------------------------------------------------------------------
 
+void CodeEditor::ensureCompleter()
+{
+    if (m_completer) return;
+    m_wordsModel = new QStringListModel(this);
+    m_completer = new QCompleter(this);
+    m_completer->setModel(m_wordsModel);
+    m_completer->setWidget(this);
+    m_completer->setCompletionMode(QCompleter::PopupCompletion);
+    m_completer->setCaseSensitivity(Qt::CaseInsensitive);
+    m_completer->setFilterMode(Qt::MatchStartsWith);
+    m_completer->setMaxVisibleItems(10);
+    connect(m_completer, qOverload<const QString&>(&QCompleter::activated), this, &CodeEditor::insertCompletion);
+}
+
 void CodeEditor::setSuggestionsEnabled(bool on)
 {
     m_suggest = on;
-    if (on && !m_completer) {
-        m_wordsModel = new QStringListModel(this);
-        m_completer = new QCompleter(this);
-        m_completer->setModel(m_wordsModel);
-        m_completer->setWidget(this);
-        m_completer->setCompletionMode(QCompleter::PopupCompletion);
-        m_completer->setCaseSensitivity(Qt::CaseInsensitive);
-        m_completer->setFilterMode(Qt::MatchStartsWith);
-        m_completer->setMaxVisibleItems(10);
-        connect(m_completer, qOverload<const QString&>(&QCompleter::activated), this, &CodeEditor::insertCompletion);
-    }
+    if (on) ensureCompleter();
     if (on) rebuildWords();
-    else if (m_completer) m_completer->popup()->hide();
+    else if (m_completer && !m_extMode) m_completer->popup()->hide();
 }
 
 void CodeEditor::rebuildWords()
 {
-    if (!m_suggest || !m_wordsModel) return;
+    if (!m_suggest || !m_wordsModel || m_extMode) return;
     QSet<QString> words(m_langWords.begin(), m_langWords.end());
     static const QRegularExpression re(QStringLiteral("[A-Za-z_][A-Za-z0-9_]{2,}"));
     const QString text = toPlainText().left(400000);
@@ -1039,8 +1109,121 @@ void CodeEditor::insertCompletion(const QString& text)
     QTextCursor c = textCursor();
     c.setPosition(start);
     c.setPosition(start + int(prefix.size()), QTextCursor::KeepAnchor);
+    if (m_extMode && m_extItems.contains(text)) {
+        const LspCompletionItem item = m_extItems.value(text);
+        m_extMode = false;
+        c.removeSelectedText();
+        setTextCursor(c);
+        if (item.snippet) insertSnippet(item.insertText);
+        else insertPlainText(item.insertText);
+        if (m_suggest) rebuildWords();
+        return;
+    }
     c.insertText(text);
     setTextCursor(c);
+}
+
+// ---- Language Server: completion popup, diagnostics, hover ------------------------------------------
+
+void CodeEditor::showCompletionItems(const QList<LspCompletionItem>& items)
+{
+    if (items.isEmpty() || !hasFocus()) return;
+    ensureCompleter();
+    m_extItems.clear();
+    QStringList labels;
+    for (const LspCompletionItem& it : items) {
+        if (m_extItems.contains(it.label)) continue;
+        m_extItems.insert(it.label, it);
+        labels << it.label;
+    }
+    m_extMode = true;
+    m_wordsModel->setStringList(labels);
+    m_completer->setCompletionPrefix(QString());
+    refreshExternalPopup();
+}
+
+void CodeEditor::refreshExternalPopup()
+{
+    if (!m_completer) return;
+    int start = 0;
+    const QString prefix = wordPrefixAtCursor(&start);
+    m_completer->setCompletionPrefix(prefix);
+    if (m_completer->completionCount() == 0) { m_completer->popup()->hide(); m_extMode = false; return; }
+    m_completer->popup()->setCurrentIndex(m_completer->completionModel()->index(0, 0));
+    QTextCursor sc = textCursor();
+    sc.setPosition(start);
+    QRect r = cursorRect(sc);
+    r.setWidth(qMax(260, m_completer->popup()->sizeHintForColumn(0) + m_completer->popup()->verticalScrollBar()->sizeHint().width() + 8));
+    m_completer->complete(r);
+}
+
+void CodeEditor::setLspDiagnostics(const QList<LspDiagnostic>& list)
+{
+    m_lspDiags = list;
+    m_lspMarks.clear();
+    m_lspSelections.clear();
+    const ThemeColors& tc = ThemeManager::instance().colors();
+    for (const LspDiagnostic& d : list) {
+        const QTextBlock b1 = document()->findBlockByNumber(d.line), b2 = document()->findBlockByNumber(d.endLine);
+        if (!b1.isValid()) continue;
+        int from = b1.position() + qMin(d.startChar, qMax(0, int(b1.length()) - 1));
+        int to = b2.isValid() ? b2.position() + qMin(d.endChar, qMax(0, int(b2.length()) - 1)) : from;
+        const int lineEnd = b1.position() + qMax(0, int(b1.length()) - 1);     // end of the line's text
+        if (to <= from) to = qMin(from + 1, lineEnd);                          // empty range: underline one character
+        if (to <= from) from = qMax(b1.position(), from - 1);                  // at end of line: the previous one
+        LspMark m;
+        m.d = d;
+        m.cursor = QTextCursor(document());
+        m.cursor.setPosition(from);
+        m.cursor.setPosition(to, QTextCursor::KeepAnchor);
+        m_lspMarks.append(m);
+        QTextEdit::ExtraSelection sel;
+        sel.cursor = m.cursor;
+        sel.format.setUnderlineStyle(QTextCharFormat::WaveUnderline);
+        sel.format.setUnderlineColor(d.severity == 1 ? tc.error : d.severity == 2 ? tc.warning : tc.textDim);
+        m_lspSelections.append(sel);
+    }
+    rebuildExtraSelections();
+}
+
+bool CodeEditor::viewportEvent(QEvent* e)
+{
+    if (e->type() == QEvent::ToolTip && !m_lspMarks.isEmpty()) {
+        const auto* he = static_cast<QHelpEvent*>(e);
+        const int pos = cursorForPosition(he->pos()).position();
+        QStringList msgs;
+        for (const LspMark& m : m_lspMarks)
+            if (pos >= m.cursor.selectionStart() && pos <= m.cursor.selectionEnd())
+                msgs << (m.d.source.isEmpty() ? m.d.message : QStringLiteral("%1 (%2)").arg(m.d.message, m.d.source));
+        if (!msgs.isEmpty()) {
+            QToolTip::showText(he->globalPos(), msgs.join(QStringLiteral("\n")), viewport());
+            return true;
+        }
+    }
+    return QPlainTextEdit::viewportEvent(e);
+}
+
+void CodeEditor::mousePressEvent(QMouseEvent* e)
+{
+    if (e->button() == Qt::LeftButton && (e->modifiers() & Qt::ControlModifier) && m_lspActive) {
+        setTextCursor(cursorForPosition(e->pos()));
+        emit lspDefinitionRequested();
+        e->accept();
+        return;
+    }
+    QPlainTextEdit::mousePressEvent(e);
+}
+
+void CodeEditor::showHoverText(const QString& text)
+{
+    if (text.trimmed().isEmpty()) return;
+    QToolTip::showText(mapToGlobal(cursorRect().bottomLeft()), text.left(1500), this);
+}
+
+QString CodeEditor::languageName() const
+{
+    const QString ext = QFileInfo(m_path).suffix().toLower();
+    return ext;
 }
 
 // ---------------------------------------------------------------------------------------------

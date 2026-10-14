@@ -1,5 +1,7 @@
 #include "FindBar.h"
 #include "CodeEditor.h"
+#include "Icons.h"
+#include "ThemeManager.h"
 
 #include <QComboBox>
 #include <QHBoxLayout>
@@ -36,7 +38,7 @@ FindBar::FindBar(QWidget* parent) : QWidget(parent)
     // ---- row 1: [v] [find v] [3 of 12] Aa W .* Prev Next x
     auto* row1 = new QHBoxLayout;
     row1->setSpacing(4);
-    m_toggle = toolButton(QStringLiteral(">"), tr("Show / hide Replace (Ctrl+H)"), true);
+    m_toggle = toolButton(QString(), tr("Show / hide Replace (Ctrl+H)"), true);
     m_toggle->setFixedWidth(22);
     m_find = new QComboBox;
     m_find->setEditable(true);
@@ -51,9 +53,13 @@ FindBar::FindBar(QWidget* parent) : QWidget(parent)
     m_regex = toolButton(QStringLiteral(".*"), tr("Regular expression"), true);
     auto* prev = new QPushButton(tr("Prev"));
     auto* next = new QPushButton(tr("Next"));
-    auto* close = new QPushButton(QStringLiteral("x"));
-    close->setFixedWidth(24);
+    // A QToolButton with a painted icon: the old 24px QPushButton had 12px style-sheet padding on both
+    // sides, which left no room for its text, so the close button looked empty.
+    auto* close = new QToolButton;
+    close->setObjectName(QStringLiteral("findClose"));
+    close->setFixedSize(26, 24);
     close->setToolTip(tr("Close (Esc)"));
+    m_close = close;
     row1->addWidget(m_toggle);
     row1->addWidget(m_find, 1);
     row1->addWidget(m_status);
@@ -97,15 +103,25 @@ FindBar::FindBar(QWidget* parent) : QWidget(parent)
     connect(repAll, &QPushButton::clicked, this, &FindBar::replaceAll);
     for (QToolButton* b : {m_case, m_word, m_regex})
         connect(b, &QToolButton::toggled, this, [this] { onTextChanged(); });
-    connect(close, &QPushButton::clicked, this, [this] {
+    connect(close, &QToolButton::clicked, this, [this] {
         hide();
         if (m_editor) m_editor->setFocus();
     });
 
     setStyleSheet(QStringLiteral("FindBar { border-top: 1px solid palette(mid); }"));
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this] { refreshIcons(); });
+    refreshIcons();
     setAutoFillBackground(true);
     loadHistory();
     hide();
+}
+
+void FindBar::refreshIcons()
+{
+    const QColor c = ThemeManager::instance().colors().text;
+    if (m_close) m_close->setIcon(Icons::glyph(Icons::Close, c));
+    if (m_toggle)
+        m_toggle->setIcon(Icons::glyph(m_replaceRow && m_replaceRow->isVisible() ? Icons::ChevronDown : Icons::ChevronRight, c));
 }
 
 // ---- state --------------------------------------------------------------------------------
@@ -125,7 +141,7 @@ QTextDocument::FindFlags FindBar::flags() const
 void FindBar::setReplaceVisible(bool on)
 {
     m_replaceRow->setVisible(on);
-    m_toggle->setText(on ? QStringLiteral("v") : QStringLiteral(">"));
+    refreshIcons();
     if (m_toggle->isChecked() != on) {
         const QSignalBlocker block(m_toggle);
         m_toggle->setChecked(on);

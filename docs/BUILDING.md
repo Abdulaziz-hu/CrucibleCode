@@ -161,3 +161,28 @@ start CrucibleCode from a Developer Command Prompt (or set the generator to *Vis
 * Linux / macOS: nothing extra (uses `forkpty`; links `libutil` on older glibc automatically).
 * Windows: **Windows 10 version 1809 or newer** (ConPTY). PowerShell 7, Windows PowerShell, Command Prompt,
   Git Bash and WSL are detected automatically.
+
+## Building packages
+
+| Script | Host | Produces |
+|--------|------|----------|
+| `./build-linux.sh` | Linux | `cruciblecode_<ver>_<arch>.deb`, `cruciblecode-<ver>-1.<arch>.rpm`, `CrucibleCode-<ver>-<arch>.AppImage` |
+| `.\build-windows.ps1` (or `build-windows.cmd`) | Windows | `CrucibleCode-<ver>-windows-x64-portable.zip`, `...-setup.exe`, `....msi` |
+
+All output goes to `dist/`, with a `<file>.sha256` next to each package. The scripts refuse to run on the wrong operating system.
+
+### Linux (`build-linux.sh`)
+* Options: `--formats deb,rpm,appimage`, `--version X`, `--no-ksyntax`, `--qt-prefix DIR`, `--skip-build`, `--clean`, `--jobs N`, `--build-dir DIR`.
+* `.deb` needs `dpkg-deb` (dependencies are computed with `dpkg-shlibdeps` when available), `.rpm` needs `rpmbuild`
+  (`sudo apt install rpm` / `sudo dnf install rpm-build`), the AppImage needs `curl` or `wget` and Qt's `qmake6`
+  (linuxdeploy + its Qt plugin are downloaded into `build/tools`; `APPIMAGE_EXTRACT_AND_RUN=1` is set so FUSE is not required).
+* Packages install to `/usr` (`/usr/bin/CrucibleCode`, desktop file, icons).
+
+### Windows (`build-windows.ps1`)
+* Parameters: `-Formats portable,installer,msi`, `-Version`, `-QtDir C:\Qt\6.7.3\msvc2022_64`, `-NoKSyntax`, `-SkipBuild`, `-Clean`, `-Generator`.
+* Finds Qt (`-QtDir`, `Qt6_DIR`, `QTDIR`, `C:\Qt`) and loads the Visual Studio x64 environment (or MinGW for MinGW kits) by itself.
+* Qt is deployed with `windeployqt`. Each package contains an `install-type.txt` (portable / installer / msi) that the updater reads.
+* **Installer**: Inno Setup 6 (`winget install JRSoftware.InnoSetup`), script in `packaging/windows/cruciblecode.iss`.
+  Per-user by default, the wizard can install for all users.
+* **MSI**: WiX Toolset v4+ (`dotnet tool install --global wix`; the script installs it and the UI extension if the .NET SDK is present). Per-machine install with a Start-menu shortcut and upgrade handling.
+* The portable ZIP needs no extra tools.

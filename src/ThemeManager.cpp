@@ -1,6 +1,10 @@
 #include "ThemeManager.h"
 
 #include <QApplication>
+#include <QFile>
+#include <QJsonDocument>
+#include <QSaveFile>
+#include <QSettings>
 #include <QPalette>
 #include <QPair>
 #include <QList>
@@ -11,15 +15,132 @@ ThemeManager& ThemeManager::instance()
     return tm;
 }
 
+const QList<ThemeColors::Field>& ThemeColors::fields()
+{
+    static const QList<Field> f = {
+        {"window", "Window background", "Interface", &ThemeColors::window},
+        {"panel", "Panels, menus, toolbars", "Interface", &ThemeColors::panel},
+        {"base", "Editor / list background", "Interface", &ThemeColors::base},
+        {"text", "Text", "Interface", &ThemeColors::text},
+        {"textDim", "Dimmed text", "Interface", &ThemeColors::textDim},
+        {"border", "Borders", "Interface", &ThemeColors::border},
+        {"accent", "Accent (status bar, focus)", "Interface", &ThemeColors::accent},
+        {"accentText", "Text on accent", "Interface", &ThemeColors::accentText},
+        {"hover", "Hover", "Interface", &ThemeColors::hover},
+        {"pressed", "Pressed / checked", "Interface", &ThemeColors::pressed},
+        {"selection", "Selection", "Interface", &ThemeColors::selection},
+        {"scrollHandle", "Scrollbar handle", "Interface", &ThemeColors::scrollHandle},
+        {"lineHighlight", "Current line", "Editor", &ThemeColors::lineHighlight},
+        {"gutterBg", "Line number background", "Editor", &ThemeColors::gutterBg},
+        {"gutterFg", "Line numbers", "Editor", &ThemeColors::gutterFg},
+        {"gutterActive", "Current line number", "Editor", &ThemeColors::gutterActive},
+        {"findMatch", "Find match", "Editor", &ThemeColors::findMatch},
+        {"keyword", "Keywords", "Syntax", &ThemeColors::keyword},
+        {"type", "Types", "Syntax", &ThemeColors::type},
+        {"string", "Strings", "Syntax", &ThemeColors::string},
+        {"number", "Numbers", "Syntax", &ThemeColors::number},
+        {"comment", "Comments", "Syntax", &ThemeColors::comment},
+        {"preproc", "Preprocessor", "Syntax", &ThemeColors::preproc},
+        {"function", "Functions", "Syntax", &ThemeColors::function},
+        {"error", "Errors", "Status", &ThemeColors::error},
+        {"warning", "Warnings", "Status", &ThemeColors::warning},
+        {"success", "Success", "Status", &ThemeColors::success},
+        {"gitAdded", "Git: added", "Status", &ThemeColors::gitAdded},
+        {"gitModified", "Git: modified", "Status", &ThemeColors::gitModified},
+        {"gitDeleted", "Git: deleted", "Status", &ThemeColors::gitDeleted},
+    };
+    return f;
+}
+
+QJsonObject ThemeColors::toJson() const
+{
+    QJsonObject o;
+    for (const Field& f : fields()) o.insert(QLatin1String(f.key), (this->*f.member).name());
+    o.insert(QStringLiteral("radius"), radius);
+    o.insert(QStringLiteral("uiFontSize"), uiFontSize);
+    return o;
+}
+
+void ThemeColors::fromJson(const QJsonObject& o)
+{
+    for (const Field& f : fields()) {
+        const QColor c(o.value(QLatin1String(f.key)).toString());
+        if (c.isValid()) this->*f.member = c;
+    }
+    if (o.contains(QStringLiteral("radius"))) radius = qBound(0, o.value(QStringLiteral("radius")).toInt(), 10);
+    if (o.contains(QStringLiteral("uiFontSize"))) {
+        const double d = o.value(QStringLiteral("uiFontSize")).toDouble();
+        uiFontSize = (d >= 6 && d <= 24) ? d : 0;
+    }
+}
+
 QString ThemeManager::idToName(Id id)
 {
-    return id == Light ? QStringLiteral("light") : QStringLiteral("dark");
+    return id == Light ? QStringLiteral("light") : id == Custom ? QStringLiteral("custom") : QStringLiteral("dark");
+}
+
+bool ThemeManager::isDark() const
+{
+    if (m_id == Custom) return m_colors.window.lightness() < 128;
+    return m_id == DarkGrey;
+}
+
+ThemeColors ThemeManager::baseColors(Id id) { return makeColors(id == Light ? Light : DarkGrey); }
+
+ThemeColors ThemeManager::customColors() const
+{
+    ThemeColors c = makeColors(DarkGrey);
+    const QByteArray json = QSettings().value(QStringLiteral("theme/custom")).toString().toUtf8();
+    if (!json.isEmpty()) c.fromJson(QJsonDocument::fromJson(json).object());
+    return c;
+}
+
+QString ThemeManager::customName() const
+{
+    return QSettings().value(QStringLiteral("theme/customName"), QStringLiteral("My Theme")).toString();
+}
+
+void ThemeManager::setCustom(const ThemeColors& c, const QString& name)
+{
+    QSettings s;
+    s.setValue(QStringLiteral("theme/custom"), QString::fromUtf8(QJsonDocument(c.toJson()).toJson(QJsonDocument::Compact)));
+    s.setValue(QStringLiteral("theme/customName"), name);
+}
+
+bool ThemeManager::exportCustom(const ThemeColors& c, const QString& name, const QString& path, QString* error) const
+{
+    const QJsonObject root{{QStringLiteral("format"), QStringLiteral("cruciblecode-theme")},
+                           {QStringLiteral("version"), 1},
+                           {QStringLiteral("name"), name},
+                           {QStringLiteral("colors"), c.toJson()}};
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) { if (error) *error = f.errorString(); return false; }
+    f.write(QJsonDocument(root).toJson(QJsonDocument::Indented));
+    if (!f.commit()) { if (error) *error = f.errorString(); return false; }
+    return true;
+}
+
+bool ThemeManager::importTheme(const QString& path, ThemeColors* out, QString* name, QString* error) const
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) { if (error) *error = f.errorString(); return false; }
+    const QJsonDocument d = QJsonDocument::fromJson(f.readAll());
+    if (!d.isObject() || d.object().value(QStringLiteral("format")).toString() != QLatin1String("cruciblecode-theme")) {
+        if (error) *error = tr("This is not a CrucibleCode theme file.");
+        return false;
+    }
+    ThemeColors c = makeColors(DarkGrey);
+    c.fromJson(d.object().value(QStringLiteral("colors")).toObject());
+    if (out) *out = c;
+    if (name) *name = d.object().value(QStringLiteral("name")).toString(QStringLiteral("Imported Theme"));
+    return true;
 }
 
 ThemeManager::Id ThemeManager::nameToId(const QString& name, Id fallback)
 {
     const QString n = name.toLower();
     if (n == QLatin1String("light")) return Light;
+    if (n == QLatin1String("custom")) return Custom;
     if (n == QLatin1String("dark") || n == QLatin1String("darkgrey")) return DarkGrey;
     return fallback;
 }
@@ -60,8 +181,24 @@ ThemeColors ThemeManager::makeColors(Id id)
 void ThemeManager::apply(Id id)
 {
     m_id = id;
-    m_colors = makeColors(id);
+    m_colors = (id == Custom) ? customColors() : makeColors(id);
+    applyColors();
+}
+
+void ThemeManager::preview(const ThemeColors& c)
+{
+    m_id = Custom;
+    m_colors = c;
+    applyColors();
+}
+
+void ThemeManager::applyColors()
+{
     const ThemeColors& c = m_colors;
+    if (!m_haveBaseFont) { m_baseFont = qApp->font(); m_haveBaseFont = true; }
+    QFont uf = m_baseFont;
+    if (c.uiFontSize > 0) uf.setPointSizeF(c.uiFontSize);
+    if (qApp->font() != uf) qApp->setFont(uf);
 
     QPalette p;
     p.setColor(QPalette::Window, c.window);
@@ -96,6 +233,7 @@ QString ThemeManager::buildStyleSheet() const
     const ThemeColors& c = m_colors;
     QString s = QStringLiteral(R"QSS(
 * { border-radius: 0px; }
+QPushButton, QToolButton, QLineEdit, QSpinBox, QComboBox, QTabBar::tab { border-radius: %radius%px; }
 QMainWindow, QDialog { background: %window%; color: %text%; }
 QWidget { color: %text%; }
 QMainWindow::separator { background: %window%; width: 4px; height: 4px; }
@@ -182,5 +320,6 @@ QStatusBar QSizeGrip { width: 0px; height: 0px; }
     };
     for (const auto& kv : map)
         s.replace(QLatin1Char('%') + kv.first + QLatin1Char('%'), kv.second.name());
+    s.replace(QStringLiteral("%radius%"), QString::number(c.radius));
     return s;
 }

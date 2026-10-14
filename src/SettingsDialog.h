@@ -1,9 +1,14 @@
 #pragma once
 #include <QDialog>
 #include <QFont>
+#include <QList>
+#include "LspManager.h"
 
 class AiCompletion;
+class ShortcutsEditor;
 class QCheckBox;
+class QTableWidget;
+class QLabel;
 class QComboBox;
 class QFontComboBox;
 class QLineEdit;
@@ -23,6 +28,12 @@ public:
     static int caretBlinkMode();         // 0 solid while typing, 1 always blink, 2 never
     static int livePort();               // live preview server: first port to try (default 5500)
     static bool liveOpenBrowser();       // open the browser when the live server starts (default on)
+    static bool perfMonitorEnabled();    // CPU / RAM / threads in the status bar (default off)
+    static bool trimTrailingWhitespace();   // on save (default off)
+    static bool ensureFinalNewline();       // on save (default off)
+
+signals:
+    void checkForUpdatesRequested();
 
 private:
     void accept() override;
@@ -42,4 +53,19 @@ private:
     QLineEdit* m_cmake = nullptr;
     QLineEdit* m_generator = nullptr;
     QLineEdit* m_extra = nullptr;
+    QCheckBox* m_perf = nullptr;
+    QCheckBox* m_trim = nullptr;
+    QCheckBox* m_finalNewline = nullptr;
+    ShortcutsEditor* m_shortcuts = nullptr;
+    QComboBox* m_defaultTemplate = nullptr;
+    QCheckBox* m_alwaysDefault = nullptr;
+    QLineEdit* m_author = nullptr;
+    QCheckBox* m_lspEnabled = nullptr;
+    QTableWidget* m_lspTable = nullptr;
+    QCheckBox* m_autoUpdate = nullptr;
+    QCheckBox* m_prerelease = nullptr;
+    QString m_originalTheme;
+
+    void fillLspTable(const QList<LspServerConfig>& list);
+    void editCustomTheme();
 };
