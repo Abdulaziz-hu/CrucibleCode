@@ -1,4 +1,6 @@
 @echo off
-rem Wrapper so that the PowerShell script can be started with a double click or from cmd.exe.
+rem Wrapper for running the Windows build script from cmd.exe or Explorer.
+setlocal
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0build-windows.ps1" %*
-exit /b %ERRORLEVEL%
+set "BUILD_EXIT_CODE=%ERRORLEVEL%"
+endlocal & exit /b %BUILD_EXIT_CODE%

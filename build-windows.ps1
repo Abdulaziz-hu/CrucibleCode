@@ -1,32 +1,10 @@
-<#
+﻿<#
 .SYNOPSIS
   CrucibleCode - build + package for Windows.
-
-.DESCRIPTION
-  Builds a Release binary, deploys Qt next to it (windeployqt) and creates
-    portable ZIP        dist\CrucibleCode-<ver>-windows-x64-portable.zip
-    installer (.exe)    dist\CrucibleCode-<ver>-windows-x64-setup.exe     (needs Inno Setup 6)
-    MSI                 dist\CrucibleCode-<ver>-windows-x64.msi           (needs WiX Toolset v4+)
-  plus a .sha256 file next to every package (the in-app updater verifies it).
-
-  Run it on Windows. Linux packages are built by build-linux.sh on Linux.
-
-.PARAMETER Formats
-  Comma separated: portable, installer, msi. Default: everything whose tools are available
-  (the portable ZIP needs no extra tools).
-
-.PARAMETER Version
-  Override the version from CMakeLists.txt.
-
-.PARAMETER QtDir
-  Qt kit folder, e.g. C:\Qt\6.7.3\msvc2022_64. Default: Qt6_DIR / QTDIR / CMAKE_PREFIX_PATH, then the newest kit under C:\Qt.
-
-.PARAMETER NoKSyntax
-  Build without KSyntaxHighlighting (faster, fewer languages; the default build needs git once).
-
 .EXAMPLE
-  .\build-windows.ps1
-  .\build-windows.ps1 -Formats portable,msi -QtDir C:\Qt\6.7.3\msvc2022_64
+  ./build-windows.ps1
+  ./build-windows.ps1 -Formats portable,msi
+  ./build-windows.ps1 -QtDir C:\Qt\6.7.3\msvc2022_64 -Clean
 #>
 [CmdletBinding()]
 param(
@@ -48,57 +26,88 @@ function Ok($m)   { Write-Host " ok $m" -ForegroundColor Green }
 function Warn($m) { Write-Host " !! $m" -ForegroundColor Yellow }
 function Die($m)  { Write-Host " xx $m" -ForegroundColor Red; exit 1 }
 function Have($n) { return [bool](Get-Command $n -ErrorAction SilentlyContinue) }
+# Run a native command, discard its output, and never let stderr/exit codes throw. Returns the exit code.
+function Invoke-Quiet([scriptblock]$Block) {
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try { & $Block 2>&1 | Out-Null; return $LASTEXITCODE }
+    catch { return 1 }
+    finally { $ErrorActionPreference = $prev }
+}
 
 if ($env:OS -ne 'Windows_NT') { Die "build-windows.ps1 must be run on Windows. On Linux use ./build-linux.sh." }
 
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $Root
-$Formats = @($Formats | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim().ToLower() } | Where-Object { $_ })
-$explicit = $Formats.Count -gt 0
-function Want($f) { return (-not $explicit) -or ($Formats -contains $f) }
-foreach ($f in $Formats) { if (@('portable','installer','msi') -notcontains $f) { Die "unknown format '$f' (portable, installer, msi)" } }
 
-# ---- version -----------------------------------------------------------------------------
+# ---- formats -----------------------------------------------------------------------------------
+$cleanedFormats = @()
+foreach ($entry in $Formats) {
+    foreach ($part in $entry.Split(',')) {
+        $trimmed = $part.Trim().ToLower()
+        if ($trimmed) { $cleanedFormats += $trimmed }
+    }
+}
+$Formats = $cleanedFormats
+$explicit = $Formats.Count -gt 0
+
+function Want($fmt) { return (-not $explicit) -or ($Formats -contains $fmt) }
+
+foreach ($f in $Formats) {
+    if (@('portable', 'installer', 'msi') -notcontains $f) { Die "unknown format '$f' (portable, installer, msi)" }
+}
+
+# ---- version -----------------------------------------------------------------------------------
 if (-not $Version) {
     $cm = Get-Content (Join-Path $Root 'CMakeLists.txt') -Raw
     if ($cm -match '(?s)project\(.*?VERSION\s+([0-9][0-9.]*)') { $Version = $Matches[1] } else { Die "could not read the version from CMakeLists.txt (use -Version)" }
 }
-$VersionParts = @($Version.Split('.') | ForEach-Object { [int]($_ -replace '[^0-9]', '') })
+
+$VersionParts = @()
+foreach ($seg in $Version.Split('.')) {
+    $digits = $seg -replace '[^0-9]', ''
+    if ($digits) { $VersionParts += [int]$digits } else { $VersionParts += 0 }
+}
 while ($VersionParts.Count -lt 3) { $VersionParts += 0 }
 $MsiVersion = "$($VersionParts[0]).$($VersionParts[1]).$($VersionParts[2])"
 Log "CrucibleCode $Version for Windows x64"
 
 # ---- tools: cmake ------------------------------------------------------------------------------
 if (-not (Have 'cmake')) {
-    foreach ($p in @("$env:ProgramFiles\CMake\bin", "${env:ProgramFiles(x86)}\CMake\bin")) {
+    $cmakePaths = @("$env:ProgramFiles\CMake\bin", "${env:ProgramFiles(x86)}\CMake\bin")
+    foreach ($p in $cmakePaths) {
         if (Test-Path (Join-Path $p 'cmake.exe')) { $env:PATH = "$p;$env:PATH"; break }
     }
 }
 if (-not (Have 'cmake')) { Die "cmake not found. Install it (winget install Kitware.CMake) or run scripts\setup.ps1." }
 
-# ---- tools: Qt kit ----------------------------------------------------------------------------------
+# ---- tools: Qt kit -----------------------------------------------------------------------------
 function Find-QtKit {
     $cands = @()
     if ($QtDir) { $cands += $QtDir }
-    foreach ($v in @($env:Qt6_DIR, $env:QTDIR)) { if ($v) { $cands += $v } }
-    if ($env:CMAKE_PREFIX_PATH) { $cands += ($env:CMAKE_PREFIX_PATH -split ';') }
+    if ($env:Qt6_DIR) { $cands += $env:Qt6_DIR }
+    if ($env:QTDIR) { $cands += $env:QTDIR }
+    if ($env:CMAKE_PREFIX_PATH) {
+        foreach ($cp in ($env:CMAKE_PREFIX_PATH -split ';')) { if ($cp) { $cands += $cp } }
+    }
     foreach ($c in $cands) {
-        # Qt6_DIR points at ...\lib\cmake\Qt6: walk up to the kit root
         $d = $c
-        for ($i = 0; $i -lt 4 -and $d; $i++) {
+        for ($j = 0; $j -lt 4 -and $d; $j++) {
             if (Test-Path (Join-Path $d 'bin\windeployqt.exe')) { return (Resolve-Path $d).Path }
             $d = Split-Path -Parent $d
         }
     }
-    foreach ($base in @('C:\Qt', "$env:USERPROFILE\Qt")) {
+    $bases = @('C:\Qt', "$env:USERPROFILE\Qt")
+    foreach ($base in $bases) {
         if (-not (Test-Path $base)) { continue }
-        $kits = Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -match '^6\.\d+' } | Sort-Object { [version]($_.Name -replace '[^0-9.]', '') } -Descending
+        $kits = @(Get-ChildItem -Path $base -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '^[0-9]+(\.[0-9]+)*$' } |
+                Sort-Object { [version]$_.Name } -Descending)
         foreach ($k in $kits) {
-            $sub = Get-ChildItem -Path $k.FullName -Directory -ErrorAction SilentlyContinue |
+            $sub = @(Get-ChildItem -Path $k.FullName -Directory -ErrorAction SilentlyContinue |
                    Where-Object { $_.Name -match '^(msvc|mingw)' -and (Test-Path (Join-Path $_.FullName 'bin\windeployqt.exe')) } |
-                   Sort-Object Name -Descending
-            if ($sub) { return $sub[0].FullName }
+                   Sort-Object Name -Descending)
+            if ($sub.Count -gt 0) { return $sub[0].FullName }
         }
     }
     return $null
@@ -108,7 +117,7 @@ if (-not $Qt) { Die "No Qt 6 kit found. Install Qt 6 (see scripts\setup.ps1) or 
 Ok "Qt kit: $Qt"
 $IsMinGw = (Split-Path -Leaf $Qt) -like 'mingw*'
 
-# ---- tools: compiler environment ------------------------------------------------------------------
+# ---- tools: compiler environment ---------------------------------------------------------------
 if ($IsMinGw) {
     $mg = Get-ChildItem 'C:\Qt\Tools' -Directory -Filter 'mingw*_64' -ErrorAction SilentlyContinue | Sort-Object Name -Descending | Select-Object -First 1
     if ($mg) { $env:PATH = "$($mg.FullName)\bin;$env:PATH" }
@@ -120,12 +129,13 @@ if ($IsMinGw) {
     if (-not $vs) { Die "Visual Studio is installed without the C++ x64 tools." }
     $vcvars = Join-Path $vs 'VC\Auxiliary\Build\vcvars64.bat'
     Log "loading the Visual Studio x64 environment"
-    cmd /c "`"$vcvars`" >nul && set" | ForEach-Object {
-        if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "Env:$($Matches[1])" -Value $Matches[2] }
+    $envLines = cmd /c "`"$vcvars`" >nul && set"
+    foreach ($line in $envLines) {
+        if ($line -match '^([^=]+)=(.*)$') { Set-Item -Path "Env:$($Matches[1])" -Value $Matches[2] }
     }
 }
 
-# ---- configure + build ---------------------------------------------------------------------------------
+# ---- configure + build -------------------------------------------------------------------------
 $BuildPath = Join-Path $Root $BuildDir
 if ($Clean -and (Test-Path $BuildPath)) { Log "cleaning $BuildDir"; Remove-Item -Recurse -Force $BuildPath }
 if (-not $SkipBuild) {
@@ -133,6 +143,7 @@ if (-not $SkipBuild) {
     if (-not $gen) { if (Have 'ninja') { $gen = 'Ninja' } elseif ($IsMinGw) { $gen = 'MinGW Makefiles' } else { $gen = 'NMake Makefiles' } }
     $ks = if ($NoKSyntax) { 'OFF' } else { 'ON' }
     Log "configuring (Release, generator: $gen, KSyntaxHighlighting=$ks)"
+
     & cmake -S $Root -B $BuildPath -G $gen "-DCMAKE_BUILD_TYPE=Release" "-DCMAKE_PREFIX_PATH=$Qt" "-DCRUCIBLE_USE_KSYNTAX=$ks"
     if ($LASTEXITCODE -ne 0) { Die "cmake configure failed" }
     Log "building"
@@ -144,7 +155,7 @@ $Exe = Get-ChildItem -Path $BuildPath -Recurse -Filter 'CrucibleCode.exe' -Error
        Where-Object { $_.FullName -notmatch '\\(stage|CMakeFiles)\\' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $Exe) { Die "CrucibleCode.exe was not found under $BuildDir" }
 
-# ---- stage: the exe + Qt runtime -------------------------------------------------------------------------
+# ---- stage: the exe + Qt runtime ---------------------------------------------------------------
 $Dist = Join-Path $Root 'dist'
 New-Item -ItemType Directory -Force -Path $Dist | Out-Null
 $StageRoot = Join-Path $BuildPath 'stage'
@@ -159,7 +170,6 @@ function New-Stage([string]$InstallType) {
     if ($LASTEXITCODE -ne 0) { Die "windeployqt failed" }
     Copy-Item (Join-Path $Root 'LICENSE') $dir
     if (Test-Path (Join-Path $Root 'THIRD_PARTY.md')) { Copy-Item (Join-Path $Root 'THIRD_PARTY.md') $dir }
-    # read by the in-app updater to know how to update this copy
     Set-Content -Path (Join-Path $dir 'install-type.txt') -Value $InstallType -Encoding ascii -NoNewline
     return $dir
 }
@@ -172,7 +182,7 @@ function Write-Sum([string]$File) {
 
 $built = @()
 
-# ---- portable ZIP -----------------------------------------------------------------------------------------
+# ---- portable ZIP ------------------------------------------------------------------------------
 if (Want 'portable') {
     Log "creating the portable ZIP"
     $dir = New-Stage 'portable'
@@ -187,17 +197,20 @@ if (Want 'portable') {
     $built += $zip
 }
 
-# ---- installer (Inno Setup) --------------------------------------------------------------------------------
+# ---- installer (Inno Setup) --------------------------------------------------------------------
 if (Want 'installer') {
     $iscc = $null
-    foreach ($p in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")) {
+    $innoPaths = @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:ProgramFiles\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")
+    foreach ($p in $innoPaths) {
         if (Test-Path $p) { $iscc = $p; break }
     }
     if (-not $iscc -and (Have 'iscc')) { $iscc = (Get-Command iscc).Source }
     if (-not $iscc -and (Have 'winget')) {
         Log "Inno Setup not found: trying winget"
-        & winget install -e --id JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements --silent | Out-Null
-        foreach ($p in @("${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe", "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe")) { if (Test-Path $p) { $iscc = $p; break } }
+        [void](Invoke-Quiet { winget install -e --id JRSoftware.InnoSetup --accept-package-agreements --accept-source-agreements --silent })
+        foreach ($p in $innoPaths) {
+            if (Test-Path $p) { $iscc = $p; break }
+        }
     }
     if (-not $iscc) {
         $msg = "Inno Setup 6 not found (https://jrsoftware.org/isdl.php): skipping the installer"
@@ -213,33 +226,40 @@ if (Want 'installer') {
     }
 }
 
-# ---- MSI (WiX v4+) -------------------------------------------------------------------------------------------
+# ---- MSI (WiX v4+) -----------------------------------------------------------------------------
 if (Want 'msi') {
     $wix = $null
     if (Have 'wix') { $wix = 'wix' }
     elseif (Have 'dotnet') {
-        Log "WiX not found: installing the 'wix' dotnet tool"
-        & dotnet tool install --global wix 2>&1 | Out-Null
-        $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
-        if (Have 'wix') { $wix = 'wix' }
+        $hasSdk = $false
+        $sdkOut = & { $ErrorActionPreference = 'Continue'; dotnet --list-sdks 2>$null }
+        if ($sdkOut) { $hasSdk = $true }
+        if ($hasSdk) {
+            Log "WiX not found: installing the 'wix' dotnet tool"
+            [void](Invoke-Quiet { dotnet tool install --global wix })
+            $env:PATH = "$env:USERPROFILE\.dotnet\tools;$env:PATH"
+            if (Have 'wix') { $wix = 'wix' }
+        } else {
+            Warn "dotnet is installed but has no SDK (runtime only); install it with: winget install Microsoft.DotNet.SDK.8"
+        }
     }
     if (-not $wix) {
-        $msg = "WiX Toolset v4+ not found (install the .NET SDK, then: dotnet tool install --global wix): skipping the MSI"
+        $msg = "WiX Toolset v4+ not available (install the .NET SDK: winget install Microsoft.DotNet.SDK.8, then open a new terminal and re-run, or: dotnet tool install --global wix): skipping the MSI"
         if ($explicit) { Die $msg } else { Warn $msg }
     } else {
         Log "creating the MSI with WiX"
-        & wix extension add -g WixToolset.UI.wixext 2>&1 | Out-Null
+        [void](Invoke-Quiet { wix extension add -g WixToolset.UI.wixext })
         $dir = New-Stage 'msi'
         $work = Join-Path $StageRoot 'wix'
         New-Item -ItemType Directory -Force -Path $work | Out-Null
 
-        # license text for the installer wizard (RTF)
         $lic = (Get-Content (Join-Path $Root 'LICENSE') -Raw) -replace '\\', '\\' -replace '\{', '\{' -replace '\}', '\}'
         $lic = ($lic -replace "`r?`n", "\par`n")
         Set-Content -Path (Join-Path $work 'license.rtf') -Value ("{\rtf1\ansi\deff0{\fonttbl{\f0 Segoe UI;}}\f0\fs18 " + $lic + "}") -Encoding ascii
 
         $upgradeCode = '6C0A3E55-4D7B-4A52-9E3B-5F1D2A7C9B11'
-        $wxs = @"
+
+        $wxs = @'
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package Name="CrucibleCode" Manufacturer="CrucibleCode contributors" Version="$MsiVersion"
            UpgradeCode="$upgradeCode" Scope="perMachine" Compressed="yes">
@@ -269,7 +289,10 @@ if (Want 'msi') {
     <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
   </Package>
 </Wix>
-"@
+'@
+
+        $wxs = $ExecutionContext.InvokeCommand.ExpandString($wxs)
+
         $wxsPath = Join-Path $work 'CrucibleCode.wxs'
         Set-Content -Path $wxsPath -Value $wxs -Encoding utf8
         $msi = Join-Path $Dist "CrucibleCode-$Version-windows-x64.msi"
@@ -282,4 +305,8 @@ if (Want 'msi') {
 }
 
 Log "done. Packages are in $Dist"
-Get-ChildItem $Dist -File | Where-Object { $_.Extension -ne '.sha256' } | ForEach-Object { "    {0,-62} {1,8:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+foreach ($file in @(Get-ChildItem $Dist -File)) {
+    if ($file.Extension -ne '.sha256') {
+        "    {0,-62} {1,8:N1} MB" -f $file.Name, ($file.Length / 1MB)
+    }
+}
