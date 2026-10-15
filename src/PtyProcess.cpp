@@ -26,8 +26,32 @@
 #define PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE 0x00020016
 #endif
 
+// MinGW headers only declare ConPTY when _WIN32_WINNT >= 0x0A00 (and older MinGW never
+// does), so declare the types ourselves and resolve the functions from kernel32 at runtime.
+// This also lets the app start (with a clear error) on Windows older than 1809.
+namespace conpty {
+using HPCON_T = void*;
+using CreateFn = HRESULT(WINAPI*)(COORD, HANDLE, HANDLE, DWORD, HPCON_T*);
+using ResizeFn = HRESULT(WINAPI*)(HPCON_T, COORD);
+using CloseFn = void(WINAPI*)(HPCON_T);
+struct Api {
+    CreateFn create = nullptr;
+    ResizeFn resize = nullptr;
+    CloseFn close = nullptr;
+    Api() {
+        HMODULE k = GetModuleHandleW(L"kernel32.dll");
+        if (!k) return;
+        create = reinterpret_cast<CreateFn>(reinterpret_cast<void*>(GetProcAddress(k, "CreatePseudoConsole")));
+        resize = reinterpret_cast<ResizeFn>(reinterpret_cast<void*>(GetProcAddress(k, "ResizePseudoConsole")));
+        close = reinterpret_cast<CloseFn>(reinterpret_cast<void*>(GetProcAddress(k, "ClosePseudoConsole")));
+    }
+    bool ok() const { return create && resize && close; }
+};
+static const Api& api() { static const Api a; return a; }
+} // namespace conpty
+
 struct PtyProcess::Impl {
-    HPCON hpc = nullptr;
+    conpty::HPCON_T hpc = nullptr;
     HANDLE inWrite = nullptr;
     HANDLE outRead = nullptr;
     HANDLE proc = nullptr;
@@ -42,7 +66,7 @@ PtyProcess::~PtyProcess()
 {
     d->stopping = true;
     if (d->proc) TerminateProcess(d->proc, 1);
-    if (d->hpc) ClosePseudoConsole(d->hpc);
+    if (d->hpc && conpty::api().close) conpty::api().close(d->hpc);
     if (d->inWrite) CloseHandle(d->inWrite);
     if (d->reader.joinable()) d->reader.join();
     if (d->outRead) CloseHandle(d->outRead);
@@ -78,7 +102,7 @@ bool PtyProcess::start(const QString& program, const QStringList& args, const QS
     COORD size;
     size.X = SHORT(cols);
     size.Y = SHORT(rows);
-    const HRESULT hr = CreatePseudoConsole(size, inRead, outWrite, 0, &d->hpc);
+    const HRESULT hr = conpty::api().ok() ? conpty::api().create(size, inRead, outWrite, 0, &d->hpc) : E_NOTIMPL;
     CloseHandle(inRead);
     CloseHandle(outWrite);
     if (FAILED(hr))
@@ -93,7 +117,7 @@ bool PtyProcess::start(const QString& program, const QStringList& args, const QS
     if (!si.lpAttributeList || !InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &attrSize))
         return fail(QStringLiteral("InitializeProcThreadAttributeList failed"));
     UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-                              d->hpc, sizeof(HPCON), nullptr, nullptr);
+                              d->hpc, sizeof(conpty::HPCON_T), nullptr, nullptr);
 
     QString cmd = quoteArg(path);
     for (const QString& a : args) cmd += QLatin1Char(' ') + quoteArg(a);
@@ -149,7 +173,7 @@ void PtyProcess::resize(int cols, int rows)
     COORD size;
     size.X = SHORT(cols);
     size.Y = SHORT(rows);
-    ResizePseudoConsole(d->hpc, size);
+    if (conpty::api().resize) conpty::api().resize(d->hpc, size);
 }
 
 bool PtyProcess::isRunning() const { return d->running; }
