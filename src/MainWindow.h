@@ -21,6 +21,7 @@ class QActionGroup;
 class QComboBox;
 class QDockWidget;
 class QFileSystemModel;
+class GitExplorerDelegate;
 class QFileSystemWatcher;
 class QLabel;
 class QMenu;
@@ -135,6 +136,7 @@ private:
     FindBar* m_findBar = nullptr;
     QTreeView* m_tree = nullptr;
     QFileSystemModel* m_fs = nullptr;
+    GitExplorerDelegate* m_gitDelegate = nullptr;
     QPlainTextEdit* m_output = nullptr;
     QTreeWidget* m_errors = nullptr;
     SearchPanel* m_search = nullptr;

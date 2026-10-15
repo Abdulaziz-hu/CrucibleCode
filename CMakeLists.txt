@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(CrucibleCode
-    VERSION 0.7.0
+    VERSION 0.8.0
     DESCRIPTION "CrucibleCode - a lightweight cross-platform IDE for C, C++ and C# built on Qt 6"
     HOMEPAGE_URL "https://github.com/Abdulaziz-hu/CrucibleCode"
     LANGUAGES CXX)
@@ -62,6 +62,7 @@ qt_add_executable(cruciblecode WIN32 MACOSX_BUNDLE
     src/GitManager.h        src/GitManager.cpp
     src/GitPanel.h          src/GitPanel.cpp
     src/Icons.h
+    src/GitExplorerDelegate.h   src/GitExplorerDelegate.cpp
     src/LspManager.h            src/LspManager.cpp
     src/LspTypes.h
     src/LspClient.h             src/LspClient.cpp

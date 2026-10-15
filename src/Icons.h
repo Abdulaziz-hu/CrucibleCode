@@ -48,4 +48,21 @@ inline QIcon glyph(Glyph g, const QColor& color, int size = 16)
     return QIcon(pm);
 }
 
+// Small filled circle, used as a status marker in tab titles.
+inline QIcon dot(const QColor& color, int size = 16)
+{
+    const qreal dpr = 2.0;
+    QPixmap pm(int(size * dpr), int(size * dpr));
+    pm.setDevicePixelRatio(dpr);
+    pm.fill(Qt::transparent);
+    QPainter p(&pm);
+    p.setRenderHint(QPainter::Antialiasing);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    const qreal d = size * 0.42;
+    p.drawEllipse(QRectF((size - d) / 2, (size - d) / 2, d, d));
+    p.end();
+    return QIcon(pm);
+}
+
 } // namespace Icons

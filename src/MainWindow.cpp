@@ -3,6 +3,8 @@
 #include "AiCompletion.h"
 #include "AppInfo.h"
 #include "FileViewers.h"
+#include "GitExplorerDelegate.h"
+#include "Icons.h"
 #include "GitManager.h"
 #include "GitPanel.h"
 #include "FindBar.h"
@@ -524,6 +526,11 @@ void MainWindow::createDocks()
     for (int c = 1; c < m_fs->columnCount(); ++c) m_tree->hideColumn(c);
     m_tree->setUniformRowHeights(true);
     m_tree->setIndentation(14);
+    m_gitDelegate = new GitExplorerDelegate(m_git, m_fs, this);
+    m_tree->setItemDelegate(m_gitDelegate);
+    // new / deleted files change the Git status: refresh it (debounced inside GitManager)
+    connect(m_fs, &QAbstractItemModel::rowsInserted, this, [this] { m_git->requestRefresh(700); });
+    connect(m_fs, &QAbstractItemModel::rowsRemoved, this, [this] { m_git->requestRefresh(700); });
     m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_tree, &QTreeView::customContextMenuRequested, this, &MainWindow::showTreeContextMenu);
     connect(m_tree, &QTreeView::activated, this, [this](const QModelIndex& idx) {
@@ -1128,6 +1135,7 @@ void MainWindow::applyEditorSettings()
     m_perfLabel->setVisible(perf);
     m_lsp->reloadSettings();
     updateLspUi();
+    updateGitUi();
 }
 
 // ---------------------------------------------------------------------------------
@@ -1490,6 +1498,30 @@ void MainWindow::showTreeContextMenu(const QPoint& pos)
         aRename = menu.addAction(tr("Rename..."));
         aDelete = menu.addAction(tr("Delete"));
     }
+    // Git actions for changed files / folders
+    QAction *aGitDiff = nullptr, *aGitStage = nullptr, *aGitUnstage = nullptr, *aGitDiscard = nullptr;
+    GitChange gitChange;
+    bool hasGitChange = false;
+    const GitStatus& gst = m_git->status();
+    if (idx.isValid() && gst.isRepo) {
+        const QString rel = QDir(m_git->topLevel()).relativeFilePath(path);
+        QStringList inFolder;                                      // changed files below a folder
+        for (const GitChange& c : gst.changes) {
+            if (!fi.isDir() && (c.path == rel || (c.path.endsWith(QLatin1Char('/')) && rel.startsWith(c.path)))) { gitChange = c; hasGitChange = true; }
+            if (fi.isDir() && (c.path.startsWith(rel + QLatin1Char('/')) || rel == QLatin1String("."))) inFolder << c.path;
+        }
+        if (hasGitChange || !inFolder.isEmpty()) {
+            menu.addSeparator();
+            if (hasGitChange) {
+                if (!gitChange.untracked()) aGitDiff = menu.addAction(tr("Git: Open Changes"));
+                if (gitChange.unstaged()) aGitStage = menu.addAction(tr("Git: Stage"));
+                if (gitChange.staged()) aGitUnstage = menu.addAction(tr("Git: Unstage"));
+                aGitDiscard = menu.addAction(tr("Git: Discard Changes..."));
+            } else {
+                aGitStage = menu.addAction(tr("Git: Stage All Changes in Folder (%1)").arg(inFolder.size()));
+            }
+        }
+    }
     menu.addSeparator();
     QAction* aReveal = menu.addAction(tr("Open in File Manager"));
     QAction* aTerminal = menu.addAction(tr("Open in Terminal"));
@@ -1500,6 +1532,21 @@ void MainWindow::showTreeContextMenu(const QPoint& pos)
 
     if (aRun && chosen == aRun) {
         runFile(path);
+    } else if (aGitDiff && chosen == aGitDiff) {
+        const bool staged = gitChange.staged() && !gitChange.unstaged();
+        const QString key = QStringLiteral("diff:") + gitChange.path + (staged ? QStringLiteral(":staged") : QString());
+        m_git->diff(gitChange, staged, [this, key, name = fi.fileName(), staged](const QString& text) {
+            showDiffTab(key, name + (staged ? tr(" (staged)") : tr(" (changes)")), text);
+        });
+    } else if (aGitStage && chosen == aGitStage) {
+        m_git->stage({hasGitChange ? gitChange.path : QDir(m_git->topLevel()).relativeFilePath(path)});
+    } else if (aGitUnstage && chosen == aGitUnstage) {
+        m_git->unstage({gitChange.path});
+    } else if (aGitDiscard && chosen == aGitDiscard) {
+        const auto r = QMessageBox::warning(this, tr("Discard Changes"),
+            tr("Discard all changes to \"%1\"? This cannot be undone.").arg(fi.fileName()),
+            QMessageBox::Discard | QMessageBox::Cancel, QMessageBox::Cancel);
+        if (r == QMessageBox::Discard) m_git->discard(gitChange);
     } else if (chosen == aNewFile) {
         const QString name = QInputDialog::getText(this, tr("New File"), tr("File name:"));
         if (name.trimmed().isEmpty()) return;
@@ -1896,8 +1943,17 @@ void MainWindow::updateGitUi()
     } else {
         m_gitLabel->hide();
     }
-    for (int i = 0; i < m_tabs->count(); ++i)
-        if (CodeEditor* e = editorAt(i)) refreshGitMarks(e);
+    m_gitDelegate->setEnabled(SettingsDialog::gitDecorations());
+    m_gitDelegate->rebuild();
+    m_tree->viewport()->update();
+    for (int i = 0; i < m_tabs->count(); ++i) {
+        CodeEditor* e = editorAt(i);
+        if (!e) continue;
+        refreshGitMarks(e);
+        // a coloured dot on the tab shows the file's Git status
+        const auto in = e->isUntitled() ? GitExplorerDelegate::Info() : m_gitDelegate->info(e->filePath(), false);
+        m_tabs->setTabIcon(i, in.letter.isNull() ? QIcon() : Icons::dot(GitExplorerDelegate::colorFor(in.letter)));
+    }
 }
 
 // Coloured bars in the gutter: added / modified / deleted lines compared with HEAD.

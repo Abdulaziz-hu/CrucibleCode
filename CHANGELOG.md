@@ -2,6 +2,9 @@
 
 Repository: https://github.com/Abdulaziz-hu/CrucibleCode
 
+## 0.8.0
+- **Git status in the Explorer**: coloured names with **M / A / U / D / R / !** badges, coloured dots on folders that contain changes, status dots on editor tabs, tooltips, and Git actions (Open Changes, Stage, Unstage, Discard) in the Explorer context menu; can be switched off in Settings
+
 ## 0.7.0
 - **Packaging scripts**: `build-linux.sh` (.deb, .rpm, .AppImage) and `build-windows.ps1` / `.cmd` (portable ZIP, installer, MSI), each with SHA-256 files
 - **Custom Theme**: new entry in the theme list, editor for every colour, corner radius and UI font size, live preview, import / export of `.cctheme` files

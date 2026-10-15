@@ -1,4 +1,4 @@
-﻿#include "PtyProcess.h"
+#include "PtyProcess.h"
 
 #include <QDir>
 #include <QFile>
@@ -26,45 +26,8 @@
 #define PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE 0x00020016
 #endif
 
-// ConPTY entry points are resolved at runtime from kernel32.dll. This avoids depending on
-// the SDK / MinGW headers declaring them (older MinGW-w64 hides them behind NTDDI checks)
-// and lets the app run (without a terminal) on Windows older than 10 1809.
-namespace {
-using PtyHpc = void*;
-using CreatePseudoConsoleFn = HRESULT(WINAPI*)(COORD, HANDLE, HANDLE, DWORD, PtyHpc*);
-using ResizePseudoConsoleFn = HRESULT(WINAPI*)(PtyHpc, COORD);
-using ClosePseudoConsoleFn = void(WINAPI*)(PtyHpc);
-
-struct ConPtyApi {
-    CreatePseudoConsoleFn create = nullptr;
-    ResizePseudoConsoleFn resize = nullptr;
-    ClosePseudoConsoleFn close = nullptr;
-    bool ok() const { return create && resize && close; }
-};
-
-template <typename Fn>
-Fn loadKernel32(const char* name)
-{
-    HMODULE k = GetModuleHandleW(L"kernel32.dll");
-    if (!k) return nullptr;
-    return reinterpret_cast<Fn>(reinterpret_cast<void*>(GetProcAddress(k, name)));
-}
-
-const ConPtyApi& conpty()
-{
-    static const ConPtyApi api = [] {
-        ConPtyApi a;
-        a.create = loadKernel32<CreatePseudoConsoleFn>("CreatePseudoConsole");
-        a.resize = loadKernel32<ResizePseudoConsoleFn>("ResizePseudoConsole");
-        a.close = loadKernel32<ClosePseudoConsoleFn>("ClosePseudoConsole");
-        return a;
-    }();
-    return api;
-}
-} // namespace
-
 struct PtyProcess::Impl {
-    PtyHpc hpc = nullptr;
+    HPCON hpc = nullptr;
     HANDLE inWrite = nullptr;
     HANDLE outRead = nullptr;
     HANDLE proc = nullptr;
@@ -79,7 +42,7 @@ PtyProcess::~PtyProcess()
 {
     d->stopping = true;
     if (d->proc) TerminateProcess(d->proc, 1);
-    if (d->hpc && conpty().close) conpty().close(d->hpc);
+    if (d->hpc) ClosePseudoConsole(d->hpc);
     if (d->inWrite) CloseHandle(d->inWrite);
     if (d->reader.joinable()) d->reader.join();
     if (d->outRead) CloseHandle(d->outRead);
@@ -115,12 +78,7 @@ bool PtyProcess::start(const QString& program, const QStringList& args, const QS
     COORD size;
     size.X = SHORT(cols);
     size.Y = SHORT(rows);
-    if (!conpty().ok()) {
-        CloseHandle(inRead);
-        CloseHandle(outWrite);
-        return fail(QStringLiteral("ConPTY is not available (needs Windows 10 version 1809 or newer)"));
-    }
-    const HRESULT hr = conpty().create(size, inRead, outWrite, 0, &d->hpc);
+    const HRESULT hr = CreatePseudoConsole(size, inRead, outWrite, 0, &d->hpc);
     CloseHandle(inRead);
     CloseHandle(outWrite);
     if (FAILED(hr))
@@ -135,7 +93,7 @@ bool PtyProcess::start(const QString& program, const QStringList& args, const QS
     if (!si.lpAttributeList || !InitializeProcThreadAttributeList(si.lpAttributeList, 1, 0, &attrSize))
         return fail(QStringLiteral("InitializeProcThreadAttributeList failed"));
     UpdateProcThreadAttribute(si.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-                              d->hpc, sizeof(PtyHpc), nullptr, nullptr);
+                              d->hpc, sizeof(HPCON), nullptr, nullptr);
 
     QString cmd = quoteArg(path);
     for (const QString& a : args) cmd += QLatin1Char(' ') + quoteArg(a);
@@ -187,11 +145,11 @@ void PtyProcess::write(const QByteArray& data)
 
 void PtyProcess::resize(int cols, int rows)
 {
-    if (!d->hpc || !conpty().resize) return;
+    if (!d->hpc) return;
     COORD size;
     size.X = SHORT(cols);
     size.Y = SHORT(rows);
-    conpty().resize(d->hpc, size);
+    ResizePseudoConsole(d->hpc, size);
 }
 
 bool PtyProcess::isRunning() const { return d->running; }
@@ -361,4 +319,3 @@ void PtyProcess::resize(int cols, int rows)
 bool PtyProcess::isRunning() const { return d->running; }
 
 #endif
-

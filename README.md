@@ -45,6 +45,7 @@ Licensed under the **MIT License** (see `LICENSE`).
 | Shortcuts | Settings > **Shortcuts**: view, search, **rebind** and **reset** the keyboard shortcut of every menu command; conflicts are detected; export / import your key map |
 | Updates | **Update system on the GitHub Releases API**: checks at start-up (can be turned off), shows the **release notes** in a popup with an **Update now** button, downloads the matching package (checksum verified) and a small helper replaces the files and **restarts CrucibleCode** by itself. Works for AppImage, `.deb`, `.rpm`, portable ZIP, installer and MSI. Help > Check for Updates |
 | Performance monitor | Optional status-bar indicator (View > Performance Monitor / Settings): **CPU, RAM and thread count**, tooltip with details |
+| Git in the Explorer | Changed files are **coloured with a status letter** (`M` modified, `A` added, `U` untracked, `D` deleted, `R` renamed, `!` conflict) and folders containing changes show a coloured dot, so you see what changed without opening Source Control. Tabs get a status dot too. Right-click a file: Open Changes, Stage, Unstage, Discard. Colours follow the theme (Git colours are editable in the Custom Theme); toggle in Settings > General |
 | Packaging | `build-linux.sh` builds **.deb, .rpm and .AppImage**; `build-windows.ps1` builds a **portable ZIP, an installer (.exe) and an .msi** (see below) |
 | GPU | Window compositing through Qt's RHI (Direct3D 11/12, OpenGL, Vulkan, Metal); `--no-gpu` and `--gpu-backend=` switches |
 

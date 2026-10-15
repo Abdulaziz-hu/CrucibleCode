@@ -77,6 +77,7 @@ bool SettingsDialog::liveOpenBrowser()
     return QSettings().value(QStringLiteral("web/openBrowser"), true).toBool();
 }
 
+bool SettingsDialog::gitDecorations() { return QSettings().value(QStringLiteral("explorer/gitStatus"), true).toBool(); }
 bool SettingsDialog::perfMonitorEnabled() { return QSettings().value(QStringLiteral("perf/enabled"), false).toBool(); }
 bool SettingsDialog::trimTrailingWhitespace() { return QSettings().value(QStringLiteral("editor/trimTrailing"), false).toBool(); }
 bool SettingsDialog::ensureFinalNewline() { return QSettings().value(QStringLiteral("editor/finalNewline"), false).toBool(); }
@@ -120,6 +121,10 @@ SettingsDialog::SettingsDialog(AiCompletion* ai, QWidget* parent) : QDialog(pare
     m_hidden = new QCheckBox(tr("Show hidden files in the Explorer (.gitignore, .env, ...)"));
     m_hidden->setChecked(showHiddenFiles());
     general->addRow(tr("Explorer:"), m_hidden);
+
+    m_gitDeco = new QCheckBox(tr("Show Git status (M, U, A, D) and colours next to files in the Explorer and on tabs"));
+    m_gitDeco->setChecked(gitDecorations());
+    general->addRow(QString(), m_gitDeco);
 
     m_perf = new QCheckBox(tr("Show CPU, memory and thread usage in the status bar"));
     m_perf->setChecked(perfMonitorEnabled());
@@ -375,6 +380,7 @@ void SettingsDialog::accept()
     s.setValue(QStringLiteral("editor/trimTrailing"), m_trim->isChecked());
     s.setValue(QStringLiteral("editor/finalNewline"), m_finalNewline->isChecked());
     s.setValue(QStringLiteral("perf/enabled"), m_perf->isChecked());
+    s.setValue(QStringLiteral("explorer/gitStatus"), m_gitDeco->isChecked());
     s.setValue(QStringLiteral("ai/enabled"), m_aiBox->isChecked());
     s.setValue(QStringLiteral("cmake/path"), m_cmake->text().trimmed());
     s.setValue(QStringLiteral("cmake/generator"), m_generator->text().trimmed());
