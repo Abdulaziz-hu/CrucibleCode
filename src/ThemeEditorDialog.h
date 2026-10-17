@@ -26,7 +26,7 @@ private:
     void livePreview();
 
     ThemeColors m_colors;
-    ThemeManager::Id m_previousId;
+    QString m_previousKey;
     QLineEdit* m_name = nullptr;
     QComboBox* m_base = nullptr;
     QSpinBox* m_radius = nullptr;

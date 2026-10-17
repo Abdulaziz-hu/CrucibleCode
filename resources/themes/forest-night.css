@@ -1,0 +1,47 @@
+/*
+ * @name        Forest Night
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Dark evergreen background with soft natural colours.
+ */
+
+:root {
+  /* Interface */
+  --window: #15211b;
+  --panel: #1c2b24;
+  --base: #101a15;
+  --text: #d4e2d4;
+  --text-dim: #7c887e;
+  --border: #394840;
+  --accent: #2f7d57;
+  --accent-text: #ffffff;
+  --hover: #2e3d36;
+  --pressed: #26543e;
+  --selection: #24493a;
+  --scroll-handle: #434f47;
+
+  /* Editor */
+  --line-highlight: #1b2520;
+  --gutter-bg: #101a15;
+  --gutter-fg: #6c786f;
+  --gutter-active: #b7c4b7;
+  --find-match: #6a5d2d;
+
+  /* Syntax */
+  --keyword: #8ccf7e;
+  --type: #6fd3c0;
+  --string: #e6c07b;
+  --number: #e59f78;
+  --comment: #6b8576;
+  --preproc: #b79ce0;
+  --function: #cfe38a;
+
+  /* Status */
+  --error: #f0786b;
+  --warning: #e6b94d;
+  --success: #7ed48f;
+  --git-added: #7ed48f;
+  --git-modified: #6fd3c0;
+  --git-deleted: #f0786b;
+}

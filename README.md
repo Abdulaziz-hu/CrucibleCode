@@ -14,7 +14,7 @@ Licensed under the **MIT License** (see `LICENSE`).
 | Area | What you get |
 |------|--------------|
 | UI | Dense, flat, high-contrast chrome: 1px borders, square corners, flat buttons, VS-style blue status bar |
-| Themes | **Dark Grey** (default), **Light** and a fully editable **Custom Theme** (every UI, editor and syntax colour, corner radius, UI font size) with live preview and **import / export** (`.cctheme`) to share themes. View > Theme / Tools > Settings > General |
+| Themes | **23 built-in themes** (Dark Grey, Light, Crucible Ember, Midnight Blue, Dracula, Nord, Monokai, One Dark, Tokyo Night, Catppuccin, Gruvbox, Solarized, Rosé Pine, GitHub, High Contrast ...), a fully editable **Custom Theme** (every UI, editor and syntax colour, corner radius, UI font size) and the **Theme Marketplace**: browse community themes from the [CrucibleCode-Themes](https://github.com/Abdulaziz-hu/CrucibleCode-Themes) repository with a live preview, **install / uninstall / apply / unapply** them, update them, or add your own `.css` file. Themes are plain CSS-variable files you can export and share by pull request, see [docs/THEMES.md](docs/THEMES.md). View > Theme / Tools > Settings > General |
 | Panels | Every panel can be dragged, tabbed, floated and **resized**; **double-click a splitter** to reset that panel to its default size (View > Reset Panel Sizes resets all) |
 | Terminal | **Built-in native terminals** (real pseudo terminals: ConPTY on Windows, `forkpty` on Linux/macOS). PowerShell, cmd, Git Bash, WSL, bash, zsh, fish... **Open as many as you like** (`+` button, shell picker `v`, Ctrl+Shift+Backtick), close any of them (tab `x`, `Kill Terminal`, or just `exit`). 256-colour/truecolor, scrollback, selection, copy/paste, Ctrl+Backtick toggles the panel |
 | Projects | Open a folder: Explorer tree with New File / Folder / Rename / Delete. **Tabs are per project**: opening another project closes the previous project's tabs (with unsaved-changes prompts) and re-opens the tabs that project had last time |
@@ -47,7 +47,7 @@ Licensed under the **MIT License** (see `LICENSE`).
 | Performance monitor | Optional status-bar indicator (View > Performance Monitor / Settings): **CPU, RAM and thread count**, tooltip with details |
 | Git in the Explorer | Changed files are **coloured with a status letter** (`M` modified, `A` added, `U` untracked, `D` deleted, `R` renamed, `!` conflict) and folders containing changes show a coloured dot, so you see what changed without opening Source Control. Tabs get a status dot too. Right-click a file: Open Changes, Stage, Unstage, Discard. Colours follow the theme (Git colours are editable in the Custom Theme); toggle in Settings > General |
 | Packaging | `build-linux.sh` builds **.deb, .rpm and .AppImage**; `build-windows.ps1` builds a **portable ZIP, an installer (.exe) and an .msi** (see below) |
-| GPU | Window compositing through Qt's RHI (Direct3D 11/12, OpenGL, Vulkan, Metal); `--no-gpu` and `--gpu-backend=` switches |
+| GPU | Optional window compositing through Qt's RHI (Direct3D 11/12, OpenGL, Vulkan, Metal); off by default to save ~100 MB of RAM; Settings > General, `--gpu` and `--gpu-backend=` switches |
 
 ## Quick start: one script does everything
 
@@ -124,7 +124,8 @@ A crucible with a rising ember: flat, square-cornered, two colours plus white. F
 
 ```
 CrucibleCode [paths...]            open folders and/or files (folders first)
-CrucibleCode --no-gpu              disable RHI window compositing
+CrucibleCode --gpu                enable RHI window compositing (off by default, costs ~100 MB RAM)
+CrucibleCode --no-gpu              force RHI window compositing off
 CrucibleCode --gpu-backend=opengl  opengl | vulkan | d3d11 | d3d12 | metal
 ```
 
@@ -154,11 +155,15 @@ and `Ctrl+V` on Windows; `Cmd+C` / `Cmd+V` on macOS), `Shift+PageUp/Down` scroll
 
 ```
 src/
-  main.cpp            startup, GPU/RHI switches, command line, app icon
+  main.cpp            startup, allocator tuning, GPU/RHI switches, command line, app icon
   MainWindow          docks, menus, toolbar, tabs, project tree, sessions, build wiring
   CodeEditor          QPlainTextEdit based editor + gutter + editing helpers
   SyntaxHighlighter   built-in fallback highlighter (incl. Markdown)
-  ThemeManager        Light / Dark Grey palettes + global flat stylesheet
+  ThemeManager        active theme, Light / Dark Grey palettes + global flat stylesheet
+  ThemeCss            reader / writer for theme-name.css files (colour variables only)
+  ThemeLibrary        built-in (resources/themes) and installed themes, install / uninstall
+  ThemeMarketplace    downloads index.json and theme files from the themes repository (cached, validated)
+  ThemeMarketplaceDialog  the Theme Marketplace window with live preview
   BuildManager        CMake and .NET CLI driver, diagnostic parser, runner
   PtyProcess          pseudo terminal: ConPTY (Windows) / forkpty (Linux, macOS)
   TerminalScreen      VT100/xterm emulator (grid, scrollback, SGR colours, alt screen)
@@ -181,8 +186,9 @@ tools/make_icons.py   regenerates the raster icons
 
 ## Notes and limits
 
-* **GPU rendering:** Qt Widgets draws glyphs with `QPainter` on the CPU; CrucibleCode enables Qt's widgets-on-RHI
-  compositing so the window is composed and presented by the GPU. Use `--no-gpu` on problematic drivers/VMs.
+* **GPU rendering (optional):** Qt Widgets draws glyphs with `QPainter` on the CPU. Qt's widgets-on-RHI compositing can
+  present the window through the GPU, but the graphics driver stack alone costs ~100 MB of RAM, so it is off by default.
+  Enable it in Settings > General or with `--gpu` / `--gpu-backend=`; `--no-gpu` forces it off.
 * **Terminal:** a practical xterm subset (no mouse reporting, no wide-character cell widths, no IME yet).
   Full-screen apps such as vim, htop, less and the PowerShell prompt work.
 * **C#:** editing, highlighting and `dotnet` build/run are included; install `csharp-ls` for language-server features; debugging is on the roadmap.

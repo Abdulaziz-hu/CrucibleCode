@@ -1,0 +1,47 @@
+/*
+ * @name        Paper Sepia
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        light
+ * @description Warm paper tones with ink-like text, gentle on long reading sessions.
+ */
+
+:root {
+  /* Interface */
+  --window: #ece2cc;
+  --panel: #f3ead6;
+  --base: #f9f3e5;
+  --text: #3f362a;
+  --text-dim: #766d5e;
+  --border: #cfc6b4;
+  --accent: #8c5a2b;
+  --accent-text: #ffffff;
+  --hover: #ddccb2;
+  --pressed: #cdb698;
+  --selection: #e3d2a8;
+  --scroll-handle: #c9c0ac;
+
+  /* Editor */
+  --line-highlight: #f2eada;
+  --gutter-bg: #f9f3e5;
+  --gutter-fg: #898275;
+  --gutter-active: #3f362a;
+  --find-match: #c8aa78;
+
+  /* Syntax */
+  --keyword: #a1401d;
+  --type: #1f6a73;
+  --string: #587a18;
+  --number: #8a4a9b;
+  --comment: #8a7f6c;
+  --preproc: #6b4e9b;
+  --function: #8a5a00;
+
+  /* Status */
+  --error: #b3261e;
+  --warning: #96620a;
+  --success: #3f7d20;
+  --git-added: #3f7d20;
+  --git-modified: #1f6a73;
+  --git-deleted: #b3261e;
+}

@@ -1,0 +1,47 @@
+/*
+ * @name        High Contrast Light
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        light
+ * @description Pure white with black text and strong borders, for maximum legibility.
+ */
+
+:root {
+  /* Interface */
+  --window: #ffffff;
+  --panel: #f2f2f2;
+  --base: #ffffff;
+  --text: #000000;
+  --text-dim: #404040;
+  --border: #4d4d4d;
+  --accent: #0f4a85;
+  --accent-text: #ffffff;
+  --hover: #d6e6f7;
+  --pressed: #a9cdf2;
+  --selection: #99c9ff;
+  --scroll-handle: #8c8c8c;
+
+  /* Editor */
+  --line-highlight: #eef4fb;
+  --gutter-bg: #ffffff;
+  --gutter-fg: #333333;
+  --gutter-active: #000000;
+  --find-match: #ffe14d;
+
+  /* Syntax */
+  --keyword: #0000c8;
+  --type: #00618a;
+  --string: #a31515;
+  --number: #0b6a2f;
+  --comment: #476b2a;
+  --preproc: #8b008b;
+  --function: #6b3f00;
+
+  /* Status */
+  --error: #c00000;
+  --warning: #8a5a00;
+  --success: #00701a;
+  --git-added: #00701a;
+  --git-modified: #00618a;
+  --git-deleted: #c00000;
+}

@@ -24,6 +24,7 @@
 #include <QToolTip>
 #include <QMouseEvent>
 #include <QSettings>
+#include <QTextBlock>
 #include <QTextCursor>
 
 #ifdef CRUCIBLE_HAVE_KSYNTAX
@@ -132,9 +133,9 @@ CodeEditor::CodeEditor(QWidget* parent) : QPlainTextEdit(parent)
     connect(this, &QPlainTextEdit::textChanged, this, [this] { if (m_spell) m_spellTimer.start(350); });
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, [this] { if (m_spell) m_spellTimer.start(120); });
 
-    m_wordsTimer.setSingleShot(true);
-    connect(&m_wordsTimer, &QTimer::timeout, this, &CodeEditor::rebuildWords);
-    connect(this, &QPlainTextEdit::textChanged, this, [this] { if (m_suggest) m_wordsTimer.start(600); });
+    // The suggestion word list is built on demand (when the popup is requested) and dropped when the editor
+    // loses focus, instead of being rebuilt after every edit and kept alive for every open tab.
+    connect(this, &QPlainTextEdit::textChanged, this, [this] { m_wordsDirty = true; });
 
     m_ghostTimer.setSingleShot(true);
     connect(&m_ghostTimer, &QTimer::timeout, this, &CodeEditor::requestGhost);
@@ -217,6 +218,11 @@ void CodeEditor::focusInEvent(QFocusEvent* e)
 void CodeEditor::focusOutEvent(QFocusEvent* e)
 {
     QPlainTextEdit::focusOutEvent(e);
+    if (m_wordsModel && !m_extMode && e->reason() != Qt::PopupFocusReason
+        && !(m_completer && m_completer->popup()->isVisible())) {
+        m_wordsModel->setStringList({});        // free the word list of an editor that is not being typed in
+        m_wordsDirty = true;
+    }
     m_caretBlink.stop();
     m_caretIdle.stop();
     viewport()->update();
@@ -338,7 +344,7 @@ void CodeEditor::configureLanguage()
     m_markup = (ext == "html" || ext == "htm" || ext == "xhtml" || ext == "xml" || ext == "svg" || ext == "xaml"
                 || ext == "vue" || ext == "jsx" || ext == "tsx" || ext == "axaml");
     m_langWords = SyntaxHighlighter::completionWords(m_path);
-    if (m_suggest) m_wordsTimer.start(50);
+    m_wordsDirty = true;
     if (m_spell) m_spellTimer.start(200);
 }
 
@@ -386,7 +392,17 @@ bool CodeEditor::loadFile(const QString& path, QString* error)
 
     m_path = QFileInfo(path).absoluteFilePath();
     configureLanguage();
-    setPlainText(QString::fromUtf8(data));
+    // Drop the previous highlighter *before* the new text goes in: otherwise the whole file is highlighted
+    // with the old (empty-path) rules, those formats are cleared again when the highlighter is replaced,
+    // and the file is highlighted a second time - three full passes and a burst of temporary memory.
+    delete m_highlighter;
+    m_highlighter = nullptr;
+    {
+        const QString text = QString::fromUtf8(data);
+        data.clear();
+        data.squeeze();                              // do not keep the raw bytes next to the decoded text
+        setPlainText(text);
+    }                                                // the temporary decoded copy is freed here
     document()->setModified(false);
     m_diskTime = QFileInfo(m_path).lastModified();
     updateHighlighter();
@@ -823,7 +839,7 @@ void CodeEditor::keyPressEvent(QKeyEvent* e)
     }
     if (m_extMode && (!m_completer || !m_completer->popup()->isVisible())) {      // popup was dismissed
         m_extMode = false;
-        if (m_suggest) rebuildWords();
+        m_wordsDirty = true;
     }
 
     if (m_caretMode == 0) caretSolid();
@@ -836,7 +852,7 @@ void CodeEditor::keyPressEvent(QKeyEvent* e)
     if (m_extMode && m_completer && m_completer->popup()->isVisible()) {
         handledExt = true;
         if (wordChar || e->key() == Qt::Key_Backspace) refreshExternalPopup();
-        else { m_completer->popup()->hide(); m_extMode = false; handledExt = false; if (m_suggest) rebuildWords(); }
+        else { m_completer->popup()->hide(); m_extMode = false; handledExt = false; m_wordsDirty = true; }
     }
     if (m_lspActive && !isReadOnly()) {
         const QString before = textCursor().block().text().left(textCursor().positionInBlock());
@@ -1049,7 +1065,7 @@ void CodeEditor::setSuggestionsEnabled(bool on)
 {
     m_suggest = on;
     if (on) ensureCompleter();
-    if (on) rebuildWords();
+    if (on) m_wordsDirty = true;
     else if (m_completer && !m_extMode) m_completer->popup()->hide();
 }
 
@@ -1058,12 +1074,18 @@ void CodeEditor::rebuildWords()
     if (!m_suggest || !m_wordsModel || m_extMode) return;
     QSet<QString> words(m_langWords.begin(), m_langWords.end());
     static const QRegularExpression re(QStringLiteral("[A-Za-z_][A-Za-z0-9_]{2,}"));
-    const QString text = toPlainText().left(400000);
-    auto it = re.globalMatch(text);
-    while (it.hasNext()) words.insert(it.next().captured());
+    // walk the blocks instead of copying the whole document with toPlainText()
+    qsizetype budget = 400000;
+    for (QTextBlock b = document()->begin(); b.isValid() && budget > 0; b = b.next()) {
+        const QString line = b.text();
+        budget -= line.size() + 1;
+        auto it = re.globalMatch(line);
+        while (it.hasNext()) words.insert(it.next().captured());
+    }
     QStringList list(words.begin(), words.end());
     list.sort(Qt::CaseInsensitive);
     m_wordsModel->setStringList(list);
+    m_wordsDirty = false;
 }
 
 QString CodeEditor::wordPrefixAtCursor(int* start) const
@@ -1080,7 +1102,7 @@ QString CodeEditor::wordPrefixAtCursor(int* start) const
 void CodeEditor::showCompletion(bool force)
 {
     if (!m_suggest || !m_completer) return;
-    if (m_wordsTimer.isActive()) { m_wordsTimer.stop(); rebuildWords(); }   // include words typed a moment ago
+    if (m_wordsDirty) rebuildWords();   // include words typed a moment ago
 
     int start = 0;
     const QString prefix = wordPrefixAtCursor(&start);
@@ -1116,7 +1138,7 @@ void CodeEditor::insertCompletion(const QString& text)
         setTextCursor(c);
         if (item.snippet) insertSnippet(item.insertText);
         else insertPlainText(item.insertText);
-        if (m_suggest) rebuildWords();
+        m_wordsDirty = true;
         return;
     }
     c.insertText(text);

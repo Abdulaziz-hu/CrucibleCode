@@ -1,0 +1,48 @@
+/*
+ * @name        One Dark
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Balanced dark theme with soft pastel syntax colours.
+ * @credits     Palette inspired by Atom One Dark (MIT)
+ */
+
+:root {
+  /* Interface */
+  --window: #21252b;
+  --panel: #2c313a;
+  --base: #282c34;
+  --text: #abb2bf;
+  --text-dim: #707680;
+  --border: #40464f;
+  --accent: #4a73c4;
+  --accent-text: #ffffff;
+  --hover: #393e47;
+  --pressed: #3c5483;
+  --selection: #3e4451;
+  --scroll-handle: #42474f;
+
+  /* Editor */
+  --line-highlight: #2f333c;
+  --gutter-bg: #282c34;
+  --gutter-fg: #727780;
+  --gutter-active: #979eaa;
+  --find-match: #776a52;
+
+  /* Syntax */
+  --keyword: #c678dd;
+  --type: #e5c07b;
+  --string: #98c379;
+  --number: #d19a66;
+  --comment: #6e7687;
+  --preproc: #56b6c2;
+  --function: #61afef;
+
+  /* Status */
+  --error: #e06c75;
+  --warning: #e5c07b;
+  --success: #98c379;
+  --git-added: #98c379;
+  --git-modified: #61afef;
+  --git-deleted: #e06c75;
+}

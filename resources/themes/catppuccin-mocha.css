@@ -1,0 +1,48 @@
+/*
+ * @name        Catppuccin Mocha
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Soothing pastel theme, the darkest Catppuccin flavour.
+ * @credits     Palette inspired by Catppuccin (MIT), https://catppuccin.com
+ */
+
+:root {
+  /* Interface */
+  --window: #181825;
+  --panel: #262637;
+  --base: #1e1e2e;
+  --text: #cdd6f4;
+  --text-dim: #7e839b;
+  --border: #414255;
+  --accent: #89b4fa;
+  --accent-text: #1e1e2e;
+  --hover: #37384a;
+  --pressed: #586d98;
+  --selection: #45475a;
+  --scroll-handle: #434657;
+
+  /* Editor */
+  --line-highlight: #282839;
+  --gutter-bg: #1e1e2e;
+  --gutter-fg: #70748b;
+  --gutter-active: #b3bad6;
+  --find-match: #7a7064;
+
+  /* Syntax */
+  --keyword: #cba6f7;
+  --type: #f9e2af;
+  --string: #a6e3a1;
+  --number: #fab387;
+  --comment: #7f849c;
+  --preproc: #f5c2e7;
+  --function: #89b4fa;
+
+  /* Status */
+  --error: #f38ba8;
+  --warning: #f9e2af;
+  --success: #a6e3a1;
+  --git-added: #a6e3a1;
+  --git-modified: #89dceb;
+  --git-deleted: #f38ba8;
+}

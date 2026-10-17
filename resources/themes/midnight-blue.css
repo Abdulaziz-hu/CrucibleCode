@@ -1,0 +1,47 @@
+/*
+ * @name        Midnight Blue
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Deep navy with cool blue and teal highlights. Easy on the eyes at night.
+ */
+
+:root {
+  /* Interface */
+  --window: #0f172a;
+  --panel: #16213a;
+  --base: #0b1220;
+  --text: #cbd5e1;
+  --text-dim: #757d8a;
+  --border: #333e55;
+  --accent: #2563eb;
+  --accent-text: #ffffff;
+  --hover: #28334b;
+  --pressed: #1e4292;
+  --selection: #1d3b7a;
+  --scroll-handle: #3c4556;
+
+  /* Editor */
+  --line-highlight: #161d2b;
+  --gutter-bg: #0b1220;
+  --gutter-fg: #656e7b;
+  --gutter-active: #aeb8c4;
+  --find-match: #705b22;
+
+  /* Syntax */
+  --keyword: #60a5fa;
+  --type: #5eead4;
+  --string: #fbbf77;
+  --number: #a5b4fc;
+  --comment: #6b7f9e;
+  --preproc: #c4a7f5;
+  --function: #f9e08a;
+
+  /* Status */
+  --error: #f87171;
+  --warning: #fbbf24;
+  --success: #4ade80;
+  --git-added: #4ade80;
+  --git-modified: #38bdf8;
+  --git-deleted: #f87171;
+}

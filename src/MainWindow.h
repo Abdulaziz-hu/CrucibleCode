@@ -75,6 +75,8 @@ private:
     void refreshStartupItems();
     void applyEditorSettings();
     void setTheme(ThemeManager::Id id);
+    void setThemeKey(const QString& key);
+    void updateThemeActions();
     void newProject();
     void checkForUpdates(bool manual);
     void showUpdateDialog(const ReleaseInfo& release);
@@ -151,6 +153,7 @@ private:
     QLabel* m_encLabel = nullptr;
     QMenu* m_recentMenu = nullptr;
     QActionGroup* m_themeGroup = nullptr;
+    QMenu* m_moreThemes = nullptr;
     QFileSystemWatcher* m_watcher = nullptr;
     AiCompletion* m_ai = nullptr;
     QLabel* m_aiLabel = nullptr;
@@ -198,7 +201,7 @@ private:
     QTreeWidget* m_problems = nullptr;
     QDockWidget* m_problemsDock = nullptr;
     bool m_updateCheckRunning = false;
-    QAction *m_actThemeCustom = nullptr, *m_actEditTheme = nullptr, *m_actNewProject = nullptr, *m_actTemplates = nullptr,
+    QAction *m_actThemeCustom = nullptr, *m_actEditTheme = nullptr, *m_actThemeMarket = nullptr, *m_actNewProject = nullptr, *m_actTemplates = nullptr,
             *m_actSnippets = nullptr, *m_actInsertSnippet = nullptr, *m_actGotoDef = nullptr, *m_actHover = nullptr,
             *m_actCheckUpdates = nullptr, *m_actPerf = nullptr;
 

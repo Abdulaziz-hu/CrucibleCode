@@ -1,0 +1,48 @@
+/*
+ * @name        Gruvbox Dark
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Retro-groove dark theme with warm, earthy contrast.
+ * @credits     Palette inspired by Gruvbox (MIT) by Pavel Pertsev
+ */
+
+:root {
+  /* Interface */
+  --window: #1d2021;
+  --panel: #32302f;
+  --base: #282828;
+  --text: #ebdbb2;
+  --text-dim: #938a74;
+  --border: #504b44;
+  --accent: #0d6b78;
+  --accent-text: #ffffff;
+  --hover: #44413c;
+  --pressed: #204e54;
+  --selection: #504945;
+  --scroll-handle: #4e4d44;
+
+  /* Editor */
+  --line-highlight: #333230;
+  --gutter-bg: #282828;
+  --gutter-fg: #847c69;
+  --gutter-active: #cec09d;
+  --find-match: #80672b;
+
+  /* Syntax */
+  --keyword: #fb5440;
+  --type: #fabd2f;
+  --string: #b8bb26;
+  --number: #d3869b;
+  --comment: #928374;
+  --preproc: #8ec07c;
+  --function: #83a598;
+
+  /* Status */
+  --error: #fb4934;
+  --warning: #fabd2f;
+  --success: #b8bb26;
+  --git-added: #b8bb26;
+  --git-modified: #83a598;
+  --git-deleted: #fb4934;
+}

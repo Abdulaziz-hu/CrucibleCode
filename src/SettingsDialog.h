@@ -29,6 +29,7 @@ public:
     static int livePort();               // live preview server: first port to try (default 5500)
     static bool liveOpenBrowser();       // open the browser when the live server starts (default on)
     static bool gitDecorations();        // M / U / A / D markers in the Explorer and tabs (default on)
+    static bool gpuEnabled();            // GPU window compositing, needs a restart (default off: ~100 MB less RAM)
     static bool perfMonitorEnabled();    // CPU / RAM / threads in the status bar (default off)
     static bool trimTrailingWhitespace();   // on save (default off)
     static bool ensureFinalNewline();       // on save (default off)
@@ -55,6 +56,7 @@ private:
     QLineEdit* m_generator = nullptr;
     QLineEdit* m_extra = nullptr;
     QCheckBox* m_perf = nullptr;
+    QCheckBox* m_gpu = nullptr;
     QCheckBox* m_gitDeco = nullptr;
     QCheckBox* m_trim = nullptr;
     QCheckBox* m_finalNewline = nullptr;
@@ -70,4 +72,6 @@ private:
 
     void fillLspTable(const QList<LspServerConfig>& list);
     void editCustomTheme();
+    void openMarketplace();
+    void fillThemeCombo(const QString& select);
 };

@@ -1,0 +1,47 @@
+/*
+ * @name        Crucible Ember
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Warm forge-fire tones on a charcoal base. The signature CrucibleCode look.
+ */
+
+:root {
+  /* Interface */
+  --window: #231f1c;
+  --panel: #2c2723;
+  --base: #1b1816;
+  --text: #e8e0d6;
+  --text-dim: #8c8680;
+  --border: #4a4540;
+  --accent: #c2410c;
+  --accent-text: #ffffff;
+  --hover: #3f3a35;
+  --pressed: #773418;
+  --selection: #5b3a26;
+  --scroll-handle: #524d49;
+
+  /* Editor */
+  --line-highlight: #262321;
+  --gutter-bg: #1b1816;
+  --gutter-fg: #7b7670;
+  --gutter-active: #c9c2b9;
+  --find-match: #755b2c;
+
+  /* Syntax */
+  --keyword: #ff8a3d;
+  --type: #f2c14e;
+  --string: #a9cf84;
+  --number: #e8907a;
+  --comment: #84766a;
+  --preproc: #cba3e6;
+  --function: #f6dc9a;
+
+  /* Status */
+  --error: #ff6b5e;
+  --warning: #f2b84b;
+  --success: #8fcf7e;
+  --git-added: #8fcf7e;
+  --git-modified: #5fb3c9;
+  --git-deleted: #ff6b5e;
+}

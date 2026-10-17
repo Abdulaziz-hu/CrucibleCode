@@ -4,8 +4,8 @@ for CrucibleCode's built-in spell checker.
 
     python tools/make_dictionary.py /usr/share/hunspell/en_US.dic /usr/share/hunspell/en_US.aff resources/dict/en_US.txt
 
-Words are lower-cased, one per line. Words Hunspell marks NOSUGGEST (flag '!') are written with a
-leading '!' so the checker accepts them but never proposes them as corrections.
+Words are lower-cased, one per line, sorted in byte order. Words Hunspell marks NOSUGGEST are written
+with a trailing '!' so the checker accepts them but never proposes them as corrections.
 """
 import re
 import sys
@@ -89,11 +89,11 @@ def main(dic, aff, dest):
                 if re.fullmatch(r"[a-z][a-z'\-\.]*", w):
                     target.add(w)
     hidden -= words
+    # One globally sorted (byte order) list: the checker binary-searches the raw resource without
+    # loading it into per-word strings. A trailing '!' marks "accepted but never suggested".
     with open(dest, "w", encoding="utf-8", newline="\n") as f:
-        for w in sorted(words):
-            f.write(w + "\n")
-        for w in sorted(hidden):
-            f.write("!" + w + "\n")
+        for w in sorted(words | hidden):
+            f.write(w + ("!" if w in hidden else "") + "\n")
     print(f"{len(words)} words (+{len(hidden)} not suggested) -> {dest}")
 
 

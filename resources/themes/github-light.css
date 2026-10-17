@@ -1,0 +1,48 @@
+/*
+ * @name        GitHub Light
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        light
+ * @description The familiar GitHub light palette.
+ * @credits     Palette inspired by GitHub Primer (MIT)
+ */
+
+:root {
+  /* Interface */
+  --window: #eaeef2;
+  --panel: #f6f8fa;
+  --base: #ffffff;
+  --text: #1f2328;
+  --text-dim: #606469;
+  --border: #d0d7de;
+  --accent: #0969da;
+  --accent-text: #ffffff;
+  --hover: #c6d9ee;
+  --pressed: #a2c3ea;
+  --selection: #b6e3ff;
+  --scroll-handle: #c1c5ca;
+
+  /* Editor */
+  --line-highlight: #f0f6fd;
+  --gutter-bg: #ffffff;
+  --gutter-fg: #797b7e;
+  --gutter-active: #1f2328;
+  --find-match: #ccb380;
+
+  /* Syntax */
+  --keyword: #cf222e;
+  --type: #953800;
+  --string: #0a3069;
+  --number: #0550ae;
+  --comment: #6e7781;
+  --preproc: #116329;
+  --function: #8250df;
+
+  /* Status */
+  --error: #cf222e;
+  --warning: #9a6700;
+  --success: #1a7f37;
+  --git-added: #1a7f37;
+  --git-modified: #0969da;
+  --git-deleted: #cf222e;
+}

@@ -1,6 +1,10 @@
 #include "ThemeEditorDialog.h"
 
+#include "ProjectTemplates.h"
+#include "ThemeLibrary.h"
+
 #include <QColorDialog>
+#include <QFileInfo>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
@@ -22,7 +26,7 @@ ThemeEditorDialog::ThemeEditorDialog(QWidget* parent) : QDialog(parent)
     setWindowTitle(tr("Custom Theme"));
     resize(560, 700);
     auto& tm = ThemeManager::instance();
-    m_previousId = tm.current();
+    m_previousKey = tm.currentKey();
     m_colors = tm.customColors();
 
     auto* root = new QVBoxLayout(this);
@@ -32,8 +36,8 @@ ThemeEditorDialog::ThemeEditorDialog(QWidget* parent) : QDialog(parent)
     top->addRow(tr("Theme name:"), m_name);
     auto* baseRow = new QHBoxLayout;
     m_base = new QComboBox;
-    m_base->addItem(tr("Dark Grey"), QStringLiteral("dark"));
-    m_base->addItem(tr("Light"), QStringLiteral("light"));
+    for (const ThemeInfo& t : ThemeLibrary::builtinThemes()) m_base->addItem(t.name, t.key);
+    for (const ThemeInfo& t : ThemeLibrary::installedThemes()) m_base->addItem(t.name, t.key);
     auto* baseBtn = new QPushButton(tr("Start from this"));
     baseBtn->setToolTip(tr("Replace all colours with the chosen built-in theme"));
     baseRow->addWidget(m_base, 1);
@@ -110,8 +114,9 @@ ThemeEditorDialog::ThemeEditorDialog(QWidget* parent) : QDialog(parent)
     root->addWidget(buttons);
 
     connect(baseBtn, &QPushButton::clicked, this, [this] {
-        const auto id = m_base->currentData().toString() == QLatin1String("light") ? ThemeManager::Light : ThemeManager::DarkGrey;
-        loadColors(ThemeManager::baseColors(id));
+        ThemeColors c;
+        if (!ThemeLibrary::load(m_base->currentData().toString(), &c)) return;
+        loadColors(c);
         livePreview();
     });
     connect(m_radius, qOverload<int>(&QSpinBox::valueChanged), this, [this](int v) {
@@ -126,16 +131,21 @@ ThemeEditorDialog::ThemeEditorDialog(QWidget* parent) : QDialog(parent)
     });
     connect(exportBtn, &QPushButton::clicked, this, [this] {
         const QString name = m_name->text().trimmed().isEmpty() ? QStringLiteral("My Theme") : m_name->text().trimmed();
-        const QString p = QFileDialog::getSaveFileName(this, tr("Export Theme"), name + QStringLiteral(".cctheme"),
-                                                       tr("CrucibleCode themes (*.cctheme *.json)"));
+        const QString cssFilter = tr("Theme CSS file for the Theme Marketplace (*.css)");
+        QString filter = cssFilter;
+        const QString p = QFileDialog::getSaveFileName(this, tr("Export Theme"), ThemeLibrary::sanitizeId(name) + QStringLiteral(".css"),
+                                                       cssFilter + QStringLiteral(";;") + tr("CrucibleCode theme, JSON (*.cctheme *.json)"), &filter);
         if (p.isEmpty()) return;
         QString err;
-        if (!ThemeManager::instance().exportCustom(m_colors, name, p, &err))
-            QMessageBox::warning(this, tr("Export Theme"), err);
+        const bool asJson = QFileInfo(p).suffix().compare(QLatin1String("css"), Qt::CaseInsensitive) != 0;
+        const QString author = ProjectTemplates::author().isEmpty() ? tr("Your Name") : ProjectTemplates::author();
+        const bool ok = asJson ? ThemeManager::instance().exportCustom(m_colors, name, p, &err)
+                               : ThemeManager::instance().exportCss(m_colors, name, author, p, &err);
+        if (!ok) QMessageBox::warning(this, tr("Export Theme"), err);
     });
     connect(importBtn, &QPushButton::clicked, this, [this] {
         const QString p = QFileDialog::getOpenFileName(this, tr("Import Theme"), QString(),
-                                                       tr("CrucibleCode themes (*.cctheme *.json)"));
+                                                       tr("CrucibleCode themes (*.css *.cctheme *.json)"));
         if (p.isEmpty()) return;
         ThemeColors c;
         QString name, err;
@@ -193,6 +203,6 @@ void ThemeEditorDialog::accept()
 
 void ThemeEditorDialog::reject()
 {
-    ThemeManager::instance().apply(m_previousId);   // undo the live preview
+    ThemeManager::instance().applyKey(m_previousKey);   // undo the live preview
     QDialog::reject();
 }

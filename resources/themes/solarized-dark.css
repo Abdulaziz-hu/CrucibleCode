@@ -1,0 +1,48 @@
+/*
+ * @name        Solarized Dark
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Precision colours for machines and people, dark variant.
+ * @credits     Palette inspired by Solarized (MIT) by Ethan Schoonover
+ */
+
+:root {
+  /* Interface */
+  --window: #00212b;
+  --panel: #073642;
+  --base: #002b36;
+  --text: #a4b2b2;
+  --text-dim: #5a757a;
+  --border: #204a54;
+  --accent: #1d77b3;
+  --accent-text: #ffffff;
+  --hover: #17424d;
+  --pressed: #12567a;
+  --selection: #0d495a;
+  --scroll-handle: #27444b;
+
+  /* Editor */
+  --line-highlight: #09323d;
+  --gutter-bg: #002b36;
+  --gutter-fg: #5b767b;
+  --gutter-active: #8b9e9f;
+  --find-match: #545a24;
+
+  /* Syntax */
+  --keyword: #859900;
+  --type: #b58900;
+  --string: #2aa198;
+  --number: #dd629e;
+  --comment: #66808a;
+  --preproc: #d67349;
+  --function: #3794d6;
+
+  /* Status */
+  --error: #ec5b57;
+  --warning: #c99a0a;
+  --success: #9bb300;
+  --git-added: #9bb300;
+  --git-modified: #2aa198;
+  --git-deleted: #ec5b57;
+}

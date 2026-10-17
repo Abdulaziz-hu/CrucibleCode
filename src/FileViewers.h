@@ -20,7 +20,7 @@ class ImageViewer : public QWidget {
     Q_OBJECT
 public:
     explicit ImageViewer(const QString& path, QWidget* parent = nullptr);
-    bool ok() const { return !m_image.isNull(); }
+    bool ok() const { return m_imgSize.isValid(); }
     QString errorText() const { return m_error; }
 
 protected:
@@ -33,7 +33,7 @@ private:
     void fit();
 
     QString m_path, m_error, m_details;
-    QImage m_image;
+    QSize m_imgSize;                  // the decoded pixels live only in the label's pixmap (no second full copy)
     QScrollArea* m_scroll = nullptr;
     QLabel* m_label = nullptr;
     QLabel* m_info = nullptr;

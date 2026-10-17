@@ -146,25 +146,25 @@ void ImageViewer::load()
         if (best.isNull()) m_error = reader.errorString();
     }
 
-    m_image = best;
-    if (m_image.isNull()) {
+    if (best.isNull()) {
         m_info->setText(m_error.isEmpty() ? tr("Could not read this image.") : m_error);
         return;
     }
     const QFileInfo fi(m_path);
-    QString info = tr("%1 x %2 px   -   %3 KB").arg(m_image.width()).arg(m_image.height()).arg(fi.size() / 1024.0, 0, 'f', 1);
+    m_imgSize = best.size();
+    QString info = tr("%1 x %2 px   -   %3 KB").arg(m_imgSize.width()).arg(m_imgSize.height()).arg(fi.size() / 1024.0, 0, 'f', 1);
     if (!sizes.isEmpty()) info += tr("   -   %n image(s): %1", nullptr, int(sizes.size())).arg(sizes.join(QStringLiteral(", ")));
     m_info->setText(info);
-    m_label->setPixmap(QPixmap::fromImage(m_image));
+    m_label->setPixmap(QPixmap::fromImage(std::move(best)));
     fit();
 }
 
 void ImageViewer::fit()
 {
-    if (m_image.isNull()) return;
+    if (!m_imgSize.isValid()) return;
     const QSize avail = m_scroll->viewport()->size() - QSize(8, 8);
-    double z = qMin(double(avail.width()) / m_image.width(), double(avail.height()) / m_image.height());
-    z = qMin(z, m_image.width() < 128 && m_image.height() < 128 ? 8.0 : 1.0);   // upscale tiny icons, never big images
+    double z = qMin(double(avail.width()) / m_imgSize.width(), double(avail.height()) / m_imgSize.height());
+    z = qMin(z, m_imgSize.width() < 128 && m_imgSize.height() < 128 ? 8.0 : 1.0);   // upscale tiny icons, never big images
     setZoom(qMax(0.02, z));
 }
 
@@ -176,8 +176,8 @@ void ImageViewer::setZoom(double z)
 
 void ImageViewer::applyZoom()
 {
-    if (m_image.isNull()) return;
-    m_label->setFixedSize(qMax(1, int(m_image.width() * m_zoom)), qMax(1, int(m_image.height() * m_zoom)));
+    if (!m_imgSize.isValid()) return;
+    m_label->setFixedSize(qMax(1, int(m_imgSize.width() * m_zoom)), qMax(1, int(m_imgSize.height() * m_zoom)));
     m_scroll->viewport()->setCursor(Qt::OpenHandCursor);
 }
 

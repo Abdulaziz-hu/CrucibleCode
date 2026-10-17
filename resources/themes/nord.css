@@ -1,0 +1,48 @@
+/*
+ * @name        Nord
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Arctic, north-bluish palette with calm, low-contrast accents.
+ * @credits     Palette inspired by Nord (MIT), https://www.nordtheme.com
+ */
+
+:root {
+  /* Interface */
+  --window: #272c36;
+  --panel: #333a47;
+  --base: #2e3440;
+  --text: #d8dee9;
+  --text-dim: #8c929d;
+  --border: #4d5461;
+  --accent: #56779e;
+  --accent-text: #ffffff;
+  --hover: #444a57;
+  --pressed: #485e7a;
+  --selection: #434c5e;
+  --scroll-handle: #515761;
+
+  /* Editor */
+  --line-highlight: #373d49;
+  --gutter-bg: #2e3440;
+  --gutter-fg: #7e848f;
+  --gutter-active: #bec4d0;
+  --find-match: #7d7360;
+
+  /* Syntax */
+  --keyword: #81a1c1;
+  --type: #8fbcbb;
+  --string: #a3be8c;
+  --number: #b690af;
+  --comment: #6f7d98;
+  --preproc: #d28c76;
+  --function: #88c0d0;
+
+  /* Status */
+  --error: #cb7d85;
+  --warning: #ebcb8b;
+  --success: #a3be8c;
+  --git-added: #a3be8c;
+  --git-modified: #88c0d0;
+  --git-deleted: #bf616a;
+}

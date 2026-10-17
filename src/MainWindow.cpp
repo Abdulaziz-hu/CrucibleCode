@@ -10,6 +10,7 @@
 #include "FindBar.h"
 #include "LiveServer.h"
 #include "LspManager.h"
+#include "MemTrim.h"
 #include "PerfMonitor.h"
 #include "ProjectTemplates.h"
 #include "ShortcutManager.h"
@@ -17,6 +18,8 @@
 #include "Snippets.h"
 #include "TemplateDialogs.h"
 #include "ThemeEditorDialog.h"
+#include "ThemeLibrary.h"
+#include "ThemeMarketplaceDialog.h"
 #include "UpdateDialog.h"
 #include "Updater.h"
 #include "QuickOpenDialog.h"
@@ -173,10 +176,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent)
             if (CodeEditor* ed = editorAt(i)) ed->applyTheme();
             else if (auto* dv = qobject_cast<DiffViewer*>(m_tabs->widget(i)))
                 for (auto* h : dv->document()->findChildren<QSyntaxHighlighter*>()) h->rehighlight();
-        if (m_themeGroup) {
-            const auto id = ThemeManager::instance().current();
-            (id == ThemeManager::Custom ? m_actThemeCustom : ThemeManager::instance().isDark() ? m_actThemeDark : m_actThemeLight)->setChecked(true);
-        }
+        updateThemeActions();
         m_terminals->applyTheme();
         // Re-render Error List coloring
         for (int i = 0; i < m_errors->topLevelItemCount(); ++i) {
@@ -290,12 +290,12 @@ void MainWindow::createActions()
     m_actThemeLight = act(tr("Light"), [this] { setTheme(ThemeManager::Light); });
     m_actThemeCustom = act(tr("Custom Theme"), [this] { setTheme(ThemeManager::Custom); });
     m_actEditTheme = act(tr("Customize Theme..."), [this] { ThemeEditorDialog(this).exec(); });
+    m_actThemeMarket = act(tr("Theme &Marketplace..."), [this] { ThemeMarketplaceDialog(this).exec(); });
     for (QAction* a : {m_actThemeDark, m_actThemeLight, m_actThemeCustom}) {
         a->setCheckable(true);
         m_themeGroup->addAction(a);
     }
-    const auto curTheme = ThemeManager::instance().current();
-    (curTheme == ThemeManager::Custom ? m_actThemeCustom : ThemeManager::instance().isDark() ? m_actThemeDark : m_actThemeLight)->setChecked(true);
+    updateThemeActions();
 
     m_actWordWrap = act(tr("&Word Wrap"), [this] {
         const bool on = m_actWordWrap->isChecked();
@@ -432,7 +432,27 @@ void MainWindow::createMenus()
     theme->addAction(m_actThemeDark);
     theme->addAction(m_actThemeLight);
     theme->addAction(m_actThemeCustom);
+    m_moreThemes = theme->addMenu(tr("More Themes"));
+    // built-in and installed themes; rebuilt every time the menu opens so new installs show up
+    connect(m_moreThemes, &QMenu::aboutToShow, this, [this] {
+        m_moreThemes->clear();
+        const QString cur = ThemeManager::instance().currentKey();
+        const auto addTheme = [&](const ThemeInfo& t) {
+            QAction* a = m_moreThemes->addAction(t.name);
+            a->setCheckable(true);
+            a->setChecked(t.key == cur);
+            connect(a, &QAction::triggered, this, [this, key = t.key] { setThemeKey(key); });
+        };
+        for (const ThemeInfo& t : ThemeLibrary::builtinThemes())
+            if (t.key != QLatin1String("dark") && t.key != QLatin1String("light")) addTheme(t);
+        const QList<ThemeInfo> installed = ThemeLibrary::installedThemes();
+        if (!installed.isEmpty()) {
+            m_moreThemes->addSeparator();
+            for (const ThemeInfo& t : installed) addTheme(t);
+        }
+    });
     theme->addSeparator();
+    theme->addAction(m_actThemeMarket);
     theme->addAction(m_actEditTheme);
     view->addSeparator();
 
@@ -1016,6 +1036,7 @@ void MainWindow::closeTab(int index)
     updateStatus();
     updateWindowTitle();
     updateMarkdownButton();
+    trimMemorySoon();
 }
 
 void MainWindow::closeTabForPath(const QString& path)
@@ -1313,6 +1334,7 @@ void MainWindow::registerShortcuts()
     sm.add(QStringLiteral("code.insertSnippet"), m_actInsertSnippet, code);
     sm.add(QStringLiteral("code.gotoDefinition"), m_actGotoDef, code);
     sm.add(QStringLiteral("code.symbolInfo"), m_actHover, code);
+    sm.add(QStringLiteral("view.themeMarketplace"), m_actThemeMarket, view);
     sm.add(QStringLiteral("view.zoomIn"), m_actZoomIn, view);
     sm.add(QStringLiteral("view.zoomOut"), m_actZoomOut, view);
     sm.add(QStringLiteral("view.zoomReset"), m_actZoomReset, view);
@@ -1343,8 +1365,24 @@ void MainWindow::registerShortcuts()
 
 void MainWindow::setTheme(ThemeManager::Id id)
 {
-    QSettings().setValue(QStringLiteral("theme"), ThemeManager::idToName(id));
-    ThemeManager::instance().apply(id);
+    setThemeKey(ThemeManager::idToName(id));
+}
+
+void MainWindow::setThemeKey(const QString& key)
+{
+    ThemeManager::instance().select(key);      // applies and remembers
+}
+
+// Check the matching radio entry of View > Theme; CSS themes (built-in / installed) are not in that group.
+void MainWindow::updateThemeActions()
+{
+    if (!m_themeGroup) return;
+    const QString key = ThemeManager::instance().currentKey();
+    QAction* target = key == QLatin1String("dark") ? m_actThemeDark : key == QLatin1String("light") ? m_actThemeLight
+                      : key == QLatin1String("custom") ? m_actThemeCustom : nullptr;
+    m_themeGroup->setExclusive(false);
+    for (QAction* a : m_themeGroup->actions()) a->setChecked(a == target);
+    m_themeGroup->setExclusive(true);
 }
 
 // ---------------------------------------------------------------------------------

@@ -25,6 +25,26 @@ QVector<TermLine> TerminalScreen::blankGrid() const
     return QVector<TermLine>(m_rows, blankLine());
 }
 
+// Scrollback lines are stored without their trailing default-looking blank cells (the view already
+// treats cells past the end of a line as blanks). A typical 120-column line of 40 characters then costs
+// a third of the memory, and empty lines cost none: 5000 lines x 120 cols x 16 B was ~9.6 MB per terminal.
+TermLine TerminalScreen::compactForScrollback(const TermLine& line)
+{
+    int n = int(line.size());
+    while (n > 0) {
+        const TermCell& c = line.at(n - 1);
+        if (c.ch != U' ' || c.bg != 0 || (c.attrs & (AttrInverse | AttrUnderline | AttrStrike))) break;
+        --n;
+    }
+    return n ? TermLine(line.cbegin(), line.cbegin() + n) : TermLine();
+}
+
+void TerminalScreen::pushScrollback(const TermLine& line)
+{
+    m_scrollback.push_back(compactForScrollback(line));
+    if (int(m_scrollback.size()) > kMaxScrollback) m_scrollback.pop_front();
+}
+
 const TermLine& TerminalScreen::lineAt(int index) const
 {
     static const TermLine empty;
@@ -177,8 +197,7 @@ void TerminalScreen::scrollUp(int n)
     n = qMin(n, m_bottom - m_top + 1);
     for (int i = 0; i < n; ++i) {
         if (!m_alt && m_top == 0) {
-            m_scrollback.push_back(m_grid[0]);
-            if (int(m_scrollback.size()) > kMaxScrollback) m_scrollback.pop_front();
+            pushScrollback(m_grid[0]);
         }
         m_grid.remove(m_top);
         m_grid.insert(m_bottom, blankLine());
@@ -220,7 +239,7 @@ void TerminalScreen::eraseDisplay(int mode)
     }
 }
 
-void TerminalScreen::clearScrollback() { m_scrollback.clear(); }
+void TerminalScreen::clearScrollback() { m_scrollback.clear(); m_scrollback.shrink_to_fit(); }
 
 // ---- cursor save / alternate screen --------------------------------------------------------
 
@@ -290,8 +309,7 @@ void TerminalScreen::resize(int cols, int rows)
         int extra = m_rows - rows;
         while (extra-- > 0) {
             if (!m_alt && m_cy > 0) {
-                m_scrollback.push_back(m_grid.first());
-                if (int(m_scrollback.size()) > kMaxScrollback) m_scrollback.pop_front();
+                pushScrollback(m_grid.first());
                 m_grid.removeFirst();
                 --m_cy;
             } else {

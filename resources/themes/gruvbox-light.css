@@ -1,0 +1,48 @@
+/*
+ * @name        Gruvbox Light
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        light
+ * @description Retro-groove light theme on warm parchment.
+ * @credits     Palette inspired by Gruvbox (MIT) by Pavel Pertsev
+ */
+
+:root {
+  /* Interface */
+  --window: #ebdbb2;
+  --panel: #f2e5bc;
+  --base: #fbf1c7;
+  --text: #3c3836;
+  --text-dim: #746c5e;
+  --border: #cec2a1;
+  --accent: #076678;
+  --accent-text: #ffffff;
+  --hover: #c7c8a9;
+  --pressed: #a2b69f;
+  --selection: #d5c4a1;
+  --scroll-handle: #c8ba99;
+
+  /* Editor */
+  --line-highlight: #ece9c2;
+  --gutter-bg: #fbf1c7;
+  --gutter-fg: #888270;
+  --gutter-active: #3c3836;
+  --find-match: #caa86b;
+
+  /* Syntax */
+  --keyword: #9d0006;
+  --type: #8f5a0b;
+  --string: #6b6a0c;
+  --number: #8f3f71;
+  --comment: #7c6f64;
+  --preproc: #36694a;
+  --function: #076678;
+
+  /* Status */
+  --error: #b91c14;
+  --warning: #9a600f;
+  --success: #6b6a0c;
+  --git-added: #6b6a0c;
+  --git-modified: #076678;
+  --git-deleted: #b91c14;
+}

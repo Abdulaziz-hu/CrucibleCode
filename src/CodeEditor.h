@@ -202,7 +202,7 @@ private:
     QCompleter* m_completer = nullptr;
     QStringListModel* m_wordsModel = nullptr;
     QStringList m_langWords;
-    QTimer m_wordsTimer;
+    bool m_wordsDirty = true;
 
     AiCompletion* m_ai = nullptr;
     bool m_aiOn = false;

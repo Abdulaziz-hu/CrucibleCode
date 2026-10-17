@@ -1,0 +1,48 @@
+/*
+ * @name        Tokyo Night
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description A dark theme inspired by the neon lights of downtown Tokyo at night.
+ * @credits     Palette inspired by Tokyo Night (MIT) by enkia
+ */
+
+:root {
+  /* Interface */
+  --window: #16161e;
+  --panel: #1f2335;
+  --base: #1a1b26;
+  --text: #c0caf5;
+  --text-dim: #757b98;
+  --border: #393e54;
+  --accent: #3d59a1;
+  --accent-text: #ffffff;
+  --hover: #2f3448;
+  --pressed: #2e3e6b;
+  --selection: #2e3c64;
+  --scroll-handle: #3f4152;
+
+  /* Editor */
+  --line-highlight: #232531;
+  --gutter-bg: #1a1b26;
+  --gutter-fg: #686d87;
+  --gutter-active: #a7b0d6;
+  --find-match: #6d5942;
+
+  /* Syntax */
+  --keyword: #bb9af7;
+  --type: #2ac3de;
+  --string: #9ece6a;
+  --number: #ff9e64;
+  --comment: #636da6;
+  --preproc: #7dcfff;
+  --function: #7aa2f7;
+
+  /* Status */
+  --error: #f7768e;
+  --warning: #e0af68;
+  --success: #9ece6a;
+  --git-added: #9ece6a;
+  --git-modified: #7dcfff;
+  --git-deleted: #f7768e;
+}

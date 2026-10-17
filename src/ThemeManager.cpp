@@ -1,6 +1,9 @@
 #include "ThemeManager.h"
+#include "ThemeCss.h"
+#include "ThemeLibrary.h"
 
 #include <QApplication>
+#include <QFileInfo>
 #include <QFile>
 #include <QJsonDocument>
 #include <QSaveFile>
@@ -81,7 +84,7 @@ QString ThemeManager::idToName(Id id)
 
 bool ThemeManager::isDark() const
 {
-    if (m_id == Custom) return m_colors.window.lightness() < 128;
+    if (m_id == Custom || m_id == Named) return m_colors.window.lightness() < 128;
     return m_id == DarkGrey;
 }
 
@@ -120,10 +123,32 @@ bool ThemeManager::exportCustom(const ThemeColors& c, const QString& name, const
     return true;
 }
 
+bool ThemeManager::exportCss(const ThemeColors& c, const QString& name, const QString& author, const QString& path, QString* error) const
+{
+    ThemeCss::Meta m;
+    m.name = name;
+    m.author = author;
+    m.version = QStringLiteral("1.0.0");
+    m.description = tr("A custom CrucibleCode theme.");
+    QSaveFile f(path);
+    if (!f.open(QIODevice::WriteOnly)) { if (error) *error = f.errorString(); return false; }
+    f.write(ThemeCss::serialize(c, m).toUtf8());
+    if (!f.commit()) { if (error) *error = f.errorString(); return false; }
+    return true;
+}
+
 bool ThemeManager::importTheme(const QString& path, ThemeColors* out, QString* name, QString* error) const
 {
     QFile f(path);
     if (!f.open(QIODevice::ReadOnly)) { if (error) *error = f.errorString(); return false; }
+    if (QFileInfo(path).suffix().compare(QLatin1String("css"), Qt::CaseInsensitive) == 0) {
+        if (f.size() > ThemeCss::kMaxFileBytes) { if (error) *error = tr("The theme file is too large."); return false; }
+        const ThemeCss::Result r = ThemeCss::parse(QString::fromUtf8(f.readAll()));
+        if (!r.ok) { if (error) *error = r.error; return false; }
+        if (out) *out = r.colors;
+        if (name) *name = r.meta.name.isEmpty() ? QFileInfo(path).completeBaseName() : r.meta.name;
+        return true;
+    }
     const QJsonDocument d = QJsonDocument::fromJson(f.readAll());
     if (!d.isObject() || d.object().value(QStringLiteral("format")).toString() != QLatin1String("cruciblecode-theme")) {
         if (error) *error = tr("This is not a CrucibleCode theme file.");
@@ -180,14 +205,46 @@ ThemeColors ThemeManager::makeColors(Id id)
 
 void ThemeManager::apply(Id id)
 {
+    if (id == Named) return;                  // needs a key, see applyKey()
     m_id = id;
+    m_key = idToName(id);
+    m_name = id == Custom ? customName() : id == Light ? tr("Light") : tr("Dark Grey");
     m_colors = (id == Custom) ? customColors() : makeColors(id);
     applyColors();
+}
+
+bool ThemeManager::applyKey(const QString& key)
+{
+    if (key == QLatin1String("dark")) { apply(DarkGrey); return true; }
+    if (key == QLatin1String("light")) { apply(Light); return true; }
+    if (key == QLatin1String("custom")) { apply(Custom); return true; }
+
+    ThemeColors c;
+    const ThemeInfo info = ThemeLibrary::info(key);
+    if (info.isValid() && ThemeLibrary::load(key, &c)) {
+        m_id = Named;
+        m_key = key;
+        m_name = info.name;
+        m_colors = c;
+        applyColors();
+        return true;
+    }
+    apply(DarkGrey);                          // missing or broken theme: never leave the UI unstyled
+    return false;
+}
+
+bool ThemeManager::select(const QString& key)
+{
+    const bool ok = applyKey(key);
+    QSettings().setValue(QStringLiteral("theme"), m_key);
+    return ok;
 }
 
 void ThemeManager::preview(const ThemeColors& c)
 {
     m_id = Custom;
+    m_key = QStringLiteral("custom");
+    m_name = customName();
     m_colors = c;
     applyColors();
 }

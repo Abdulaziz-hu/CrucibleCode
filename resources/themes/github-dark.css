@@ -1,0 +1,48 @@
+/*
+ * @name        GitHub Dark
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description The familiar GitHub dark palette.
+ * @credits     Palette inspired by GitHub Primer (MIT)
+ */
+
+:root {
+  /* Interface */
+  --window: #010409;
+  --panel: #161b22;
+  --base: #0d1117;
+  --text: #c9d1d9;
+  --text-dim: #747b82;
+  --border: #30363d;
+  --accent: #1f6feb;
+  --accent-text: #ffffff;
+  --hover: #282d34;
+  --pressed: #1a4586;
+  --selection: #1f3d66;
+  --scroll-handle: #31353b;
+
+  /* Editor */
+  --line-highlight: #171c22;
+  --gutter-bg: #0d1117;
+  --gutter-fg: #656b72;
+  --gutter-active: #adb4bc;
+  --find-match: #604a1c;
+
+  /* Syntax */
+  --keyword: #ff7b72;
+  --type: #ffa657;
+  --string: #a5d6ff;
+  --number: #79c0ff;
+  --comment: #8b949e;
+  --preproc: #7ee787;
+  --function: #d2a8ff;
+
+  /* Status */
+  --error: #f85149;
+  --warning: #d29922;
+  --success: #3fb950;
+  --git-added: #3fb950;
+  --git-modified: #58a6ff;
+  --git-deleted: #f85149;
+}

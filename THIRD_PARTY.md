@@ -10,5 +10,6 @@
 | aqtinstall | MIT | Used only by the setup scripts to download Qt from the official Qt servers |
 | llama.cpp (`llama-server`) | MIT | Optional, never bundled: downloaded on request for AI tab completion, or taken from your PATH |
 | Qwen2.5-Coder 0.5B / 1.5B (GGUF) | Apache-2.0 | Optional, never bundled: downloaded on request from Hugging Face for AI tab completion |
+| Colour palettes | MIT (Dracula, Nord, Solarized, Gruvbox, Atom One Dark, Tokyo Night, Catppuccin, Rosé Pine, GitHub Primer); Monokai by Wimer Hazenberg | The built-in themes in `resources/themes` are *inspired by* these well-known colour schemes. They are re-tuned for CrucibleCode (and adjusted for readability), not copies of the original theme files. Credit is also given inside each theme's `@credits` line |
 
 No proprietary or commercial-only components are required to build or run CrucibleCode.

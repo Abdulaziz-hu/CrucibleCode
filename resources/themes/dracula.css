@@ -1,0 +1,48 @@
+/*
+ * @name        Dracula
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Dark purple-grey with vivid pink, green and cyan.
+ * @credits     Palette inspired by the Dracula theme (MIT), https://draculatheme.com
+ */
+
+:root {
+  /* Interface */
+  --window: #21222c;
+  --panel: #2b2d3b;
+  --base: #282a36;
+  --text: #f8f8f2;
+  --text-dim: #9a9b9d;
+  --border: #4c4d58;
+  --accent: #bd93f9;
+  --accent-text: #282a36;
+  --hover: #40414d;
+  --pressed: #74609a;
+  --selection: #44475a;
+  --scroll-handle: #55555c;
+
+  /* Editor */
+  --line-highlight: #333540;
+  --gutter-bg: #282a36;
+  --gutter-fg: #8a8b8e;
+  --gutter-active: #d9d9d6;
+  --find-match: #82664d;
+
+  /* Syntax */
+  --keyword: #ff79c6;
+  --type: #8be9fd;
+  --string: #f1fa8c;
+  --number: #bd93f9;
+  --comment: #6272a4;
+  --preproc: #ffb86c;
+  --function: #50fa7b;
+
+  /* Status */
+  --error: #ff5555;
+  --warning: #ffb86c;
+  --success: #50fa7b;
+  --git-added: #50fa7b;
+  --git-modified: #8be9fd;
+  --git-deleted: #ff5555;
+}

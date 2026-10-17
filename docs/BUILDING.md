@@ -137,7 +137,7 @@ Rendering uses Direct3D 11 by default.
 | Linux | OpenGL | `--gpu-backend=vulkan` |
 | macOS | Metal | none |
 
-`CrucibleCode --no-gpu` turns GPU compositing off (use it for broken drivers, VMs, remote desktops).
+GPU compositing is **off by default** (it adds ~100 MB of RAM). Turn it on in Settings > General or with `CrucibleCode --gpu`; `--no-gpu` forces it off (also overrides the setting for broken drivers, VMs, remote desktops).
 
 ## Linux display server
 

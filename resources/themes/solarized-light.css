@@ -1,0 +1,48 @@
+/*
+ * @name        Solarized Light
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        light
+ * @description Precision colours for machines and people, light variant.
+ * @credits     Palette inspired by Solarized (MIT) by Ethan Schoonover
+ */
+
+:root {
+  /* Interface */
+  --window: #eee8d5;
+  --panel: #f5efdc;
+  --base: #fdf6e3;
+  --text: #4f666e;
+  --text-dim: #7a8786;
+  --border: #d4d4c6;
+  --accent: #1d77b3;
+  --accent-text: #ffffff;
+  --hover: #dbe0d6;
+  --pressed: #abc4ca;
+  --selection: #d8e0e0;
+  --scroll-handle: #cecec0;
+
+  /* Editor */
+  --line-highlight: #f0eee0;
+  --gutter-bg: #fdf6e3;
+  --gutter-fg: #86908d;
+  --gutter-active: #4f666e;
+  --find-match: #ccb572;
+
+  /* Syntax */
+  --keyword: #647800;
+  --type: #8e6b00;
+  --string: #1c7d75;
+  --number: #c0286e;
+  --comment: #7a8d8f;
+  --preproc: #b8400e;
+  --function: #1a6fb0;
+
+  /* Status */
+  --error: #d12a27;
+  --warning: #977200;
+  --success: #5f7d00;
+  --git-added: #5f7d00;
+  --git-modified: #1d8077;
+  --git-deleted: #d12a27;
+}

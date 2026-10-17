@@ -1,0 +1,47 @@
+/*
+ * @name        High Contrast Dark
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description Pure black with bright text and strong borders, for maximum legibility.
+ */
+
+:root {
+  /* Interface */
+  --window: #000000;
+  --panel: #0a0a0a;
+  --base: #000000;
+  --text: #ffffff;
+  --text-dim: #c8c8c8;
+  --border: #8c8c8c;
+  --accent: #0b63c5;
+  --accent-text: #ffffff;
+  --hover: #262626;
+  --pressed: #14408a;
+  --selection: #1b4f8c;
+  --scroll-handle: #6a6a6a;
+
+  /* Editor */
+  --line-highlight: #1a1a1a;
+  --gutter-bg: #000000;
+  --gutter-fg: #b0b0b0;
+  --gutter-active: #d9d9d9;
+  --find-match: #6b5820;
+
+  /* Syntax */
+  --keyword: #6cb6ff;
+  --type: #4ec9b0;
+  --string: #ffb38a;
+  --number: #c3e88d;
+  --comment: #7ec27a;
+  --preproc: #ff7ad9;
+  --function: #ffe66d;
+
+  /* Status */
+  --error: #ff6b6b;
+  --warning: #ffd24d;
+  --success: #5af78e;
+  --git-added: #5af78e;
+  --git-modified: #6cb6ff;
+  --git-deleted: #ff6b6b;
+}

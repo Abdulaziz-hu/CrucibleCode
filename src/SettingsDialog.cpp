@@ -7,7 +7,9 @@
 #include "SnippetDialog.h"
 #include "TemplateDialogs.h"
 #include "ThemeEditorDialog.h"
+#include "ThemeLibrary.h"
 #include "ThemeManager.h"
+#include "ThemeMarketplaceDialog.h"
 #include "Updater.h"
 #include <QCoreApplication>
 #include <QHeaderView>
@@ -22,6 +24,7 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QSignalBlocker>
+#include <QStandardItemModel>
 #include <QLabel>
 #include <QPushButton>
 #include <QLineEdit>
@@ -78,6 +81,7 @@ bool SettingsDialog::liveOpenBrowser()
 }
 
 bool SettingsDialog::gitDecorations() { return QSettings().value(QStringLiteral("explorer/gitStatus"), true).toBool(); }
+bool SettingsDialog::gpuEnabled() { return QSettings().value(QStringLiteral("gpu/enabled"), false).toBool(); }
 bool SettingsDialog::perfMonitorEnabled() { return QSettings().value(QStringLiteral("perf/enabled"), false).toBool(); }
 bool SettingsDialog::trimTrailingWhitespace() { return QSettings().value(QStringLiteral("editor/trimTrailing"), false).toBool(); }
 bool SettingsDialog::ensureFinalNewline() { return QSettings().value(QStringLiteral("editor/finalNewline"), false).toBool(); }
@@ -104,19 +108,21 @@ SettingsDialog::SettingsDialog(AiCompletion* ai, QWidget* parent) : QDialog(pare
     // ---------------- General ----------------
     auto* general = new QFormLayout;
     general->setLabelAlignment(Qt::AlignRight);
-    m_originalTheme = ThemeManager::idToName(ThemeManager::instance().current());
+    m_originalTheme = ThemeManager::instance().currentKey();
     m_theme = new QComboBox;
-    m_theme->addItem(tr("Dark Grey"), QStringLiteral("dark"));
-    m_theme->addItem(tr("Light"), QStringLiteral("light"));
-    m_theme->addItem(tr("Custom Theme"), QStringLiteral("custom"));
-    m_theme->setCurrentIndex(m_theme->findData(m_originalTheme));
+    m_theme->setMaxVisibleItems(24);
+    fillThemeCombo(m_originalTheme);
     auto* editTheme = new QPushButton(tr("Customize..."));
     editTheme->setToolTip(tr("Edit every colour, import or export the custom theme"));
+    auto* market = new QPushButton(tr("Theme Marketplace..."));
+    market->setToolTip(tr("Browse, install and apply community themes"));
     auto* themeRow = new QHBoxLayout;
     themeRow->addWidget(m_theme, 1);
     themeRow->addWidget(editTheme);
+    themeRow->addWidget(market);
     general->addRow(tr("Theme:"), themeRow);
     connect(editTheme, &QPushButton::clicked, this, &SettingsDialog::editCustomTheme);
+    connect(market, &QPushButton::clicked, this, &SettingsDialog::openMarketplace);
 
     m_hidden = new QCheckBox(tr("Show hidden files in the Explorer (.gitignore, .env, ...)"));
     m_hidden->setChecked(showHiddenFiles());
@@ -129,6 +135,10 @@ SettingsDialog::SettingsDialog(AiCompletion* ai, QWidget* parent) : QDialog(pare
     m_perf = new QCheckBox(tr("Show CPU, memory and thread usage in the status bar"));
     m_perf->setChecked(perfMonitorEnabled());
     general->addRow(tr("Performance monitor:"), m_perf);
+
+    m_gpu = new QCheckBox(tr("GPU window compositing (restart required; uses roughly 100 MB more memory, rarely noticeable in an editor)"));
+    m_gpu->setChecked(gpuEnabled());
+    general->addRow(tr("Graphics:"), m_gpu);
 
     m_trim = new QCheckBox(tr("Trim trailing whitespace when saving"));
     m_trim->setChecked(trimTrailingWhitespace());
@@ -353,16 +363,46 @@ void SettingsDialog::fillLspTable(const QList<LspServerConfig>& list)
     }
 }
 
+// Native themes, then the built-in CSS themes, then the installed ones. Section headers are not selectable.
+void SettingsDialog::fillThemeCombo(const QString& select)
+{
+    QSignalBlocker block(m_theme);
+    m_theme->clear();
+    const auto header = [this](const QString& text) {
+        m_theme->addItem(text);
+        if (auto* model = qobject_cast<QStandardItemModel*>(m_theme->model()))
+            model->item(m_theme->count() - 1)->setFlags(Qt::NoItemFlags);
+    };
+    m_theme->addItem(tr("Dark Grey"), QStringLiteral("dark"));
+    m_theme->addItem(tr("Light"), QStringLiteral("light"));
+    m_theme->addItem(tr("Custom Theme"), QStringLiteral("custom"));
+    header(tr("--- Built-in themes ---"));
+    for (const ThemeInfo& t : ThemeLibrary::builtinThemes())
+        if (t.key != QLatin1String("dark") && t.key != QLatin1String("light"))
+            m_theme->addItem(t.name, t.key);
+    const QList<ThemeInfo> installed = ThemeLibrary::installedThemes();
+    if (!installed.isEmpty()) {
+        header(tr("--- Installed themes ---"));
+        for (const ThemeInfo& t : installed) m_theme->addItem(t.name, t.key);
+    }
+    const int i = m_theme->findData(select);
+    m_theme->setCurrentIndex(i >= 0 ? i : 0);
+}
+
+void SettingsDialog::openMarketplace()
+{
+    ThemeMarketplaceDialog dlg(this);
+    dlg.exec();                                    // applies themes immediately, like the Customize dialog
+    m_originalTheme = ThemeManager::instance().currentKey();
+    fillThemeCombo(m_originalTheme);
+}
+
 void SettingsDialog::editCustomTheme()
 {
     ThemeEditorDialog dlg(this);
-    if (dlg.exec() == QDialog::Accepted) {
-        m_theme->setCurrentIndex(m_theme->findData(QStringLiteral("custom")));   // already applied and saved by the dialog
-        m_originalTheme = QStringLiteral("custom");
-    } else {
-        // the dialog restored the previous theme; keep the combo in sync with what is applied
-        m_theme->setCurrentIndex(m_theme->findData(ThemeManager::idToName(ThemeManager::instance().current())));
-    }
+    dlg.exec();                                    // applied and saved by the dialog on OK, restored on Cancel
+    m_originalTheme = ThemeManager::instance().currentKey();
+    fillThemeCombo(m_originalTheme);
 }
 
 void SettingsDialog::accept()
@@ -380,6 +420,7 @@ void SettingsDialog::accept()
     s.setValue(QStringLiteral("editor/trimTrailing"), m_trim->isChecked());
     s.setValue(QStringLiteral("editor/finalNewline"), m_finalNewline->isChecked());
     s.setValue(QStringLiteral("perf/enabled"), m_perf->isChecked());
+    s.setValue(QStringLiteral("gpu/enabled"), m_gpu->isChecked());
     s.setValue(QStringLiteral("explorer/gitStatus"), m_gitDeco->isChecked());
     s.setValue(QStringLiteral("ai/enabled"), m_aiBox->isChecked());
     s.setValue(QStringLiteral("cmake/path"), m_cmake->text().trimmed());
@@ -409,8 +450,7 @@ void SettingsDialog::accept()
     Updater::setIncludePrereleases(m_prerelease->isChecked());
 
     const QString theme = m_theme->currentData().toString();
-    s.setValue(QStringLiteral("theme"), theme);
-    if (ThemeManager::nameToId(theme) != ThemeManager::instance().current())
-        ThemeManager::instance().apply(ThemeManager::nameToId(theme));
+    if (!theme.isEmpty() && theme != ThemeManager::instance().currentKey())
+        ThemeManager::instance().select(theme);
     QDialog::accept();
 }

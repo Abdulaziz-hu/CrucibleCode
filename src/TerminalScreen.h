@@ -67,6 +67,9 @@ private:
     void saveCursor();
     void restoreCursor();
 
+    static TermLine compactForScrollback(const TermLine& line);
+    void pushScrollback(const TermLine& line);
+
     TermCell blankCell() const;
     TermLine blankLine() const;
     QVector<TermLine> blankGrid() const;

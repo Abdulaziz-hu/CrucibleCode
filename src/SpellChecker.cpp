@@ -1,9 +1,11 @@
 #include "SpellChecker.h"
 
 #include <QFile>
+#include <QResource>
 #include <QSettings>
 
 #include <algorithm>
+#include <cstring>
 
 SpellChecker& SpellChecker::instance()
 {
@@ -16,34 +18,73 @@ void SpellChecker::ensureLoaded()
     if (m_loaded) return;
     m_loaded = true;
 
-    QFile f(QStringLiteral(":/dict/en_US.txt"));
-    if (f.open(QIODevice::ReadOnly)) {
-        const QByteArray data = f.readAll();
-        m_words.reserve(170000);
-        for (const QByteArray& line : data.split('\n')) {
-            if (line.isEmpty()) continue;
-            if (line.startsWith('!')) {
-                const QString w = QString::fromUtf8(line.mid(1));
-                m_words.insert(w);
-                m_noSuggest.insert(w);
-            } else {
-                m_words.insert(QString::fromUtf8(line));
+    QResource res(QStringLiteral(":/dict/en_US.txt"));
+    if (res.isValid()) {
+        if (res.compressionAlgorithm() != QResource::NoCompression) {                    // fallback: built without -no-compress
+            m_owned = res.uncompressedData();
+            m_data = m_owned.constData();
+            m_size = m_owned.size();
+        } else {                                        // normal case: points into the executable image
+            m_data = reinterpret_cast<const char*>(res.data());
+            m_size = qsizetype(res.size());
+        }
+        // 257-entry first-byte index (~2 KB): m_bucket[b] = offset of the first line starting with a byte >= b.
+        // Found by binary search, so only a handful of pages of the resource are ever touched.
+        for (int byte = 0; byte <= 256; ++byte) {
+            qsizetype lo = 0, hi = m_size;
+            while (lo < hi) {
+                qsizetype mid = lo + (hi - lo) / 2;
+                qsizetype st = mid;
+                while (st > lo && m_data[st - 1] != '\n') --st;
+                if (int(uchar(m_data[st])) < byte) {
+                    const char* nl = static_cast<const char*>(memchr(m_data + st, '\n', size_t(m_size - st)));
+                    lo = nl ? qsizetype(nl - m_data) + 1 : m_size;
+                } else {
+                    hi = st;
+                }
             }
+            m_bucket[byte] = lo;
         }
     }
     const QStringList user = QSettings().value(QStringLiteral("spell/userWords")).toStringList();
     for (const QString& w : user) m_user.insert(w.toLower());
 }
 
+// Binary search over line start offsets inside [lo, hi). The stored line may end in '!' (not suggested).
+bool SpellChecker::inDictionary(const QString& lower, bool* noSuggest) const
+{
+    if (!m_data || lower.isEmpty()) return false;
+    const QByteArray key = lower.toUtf8();
+    const uchar first = uchar(key.at(0));
+    qsizetype lo = m_bucket[first], hi = m_bucket[first + 1];
+    while (lo < hi) {
+        qsizetype mid = lo + (hi - lo) / 2;
+        qsizetype s = mid;
+        while (s > lo && m_data[s - 1] != '\n') --s;                  // start of the line containing mid
+        const char* nl = static_cast<const char*>(memchr(m_data + s, '\n', size_t(m_size - s)));
+        const qsizetype e = nl ? qsizetype(nl - m_data) : m_size;      // end (exclusive) of that line
+        qsizetype len = e - s;
+        const bool flagged = len > 0 && m_data[e - 1] == '!';
+        if (flagged) --len;
+        const qsizetype n = qMin<qsizetype>(len, key.size());
+        int c = n ? memcmp(m_data + s, key.constData(), size_t(n)) : 0;
+        if (c == 0) c = len < key.size() ? -1 : (len > key.size() ? 1 : 0);
+        if (c == 0) { if (noSuggest) *noSuggest = flagged; return true; }
+        if (c < 0) lo = e + 1;
+        else hi = s;
+    }
+    return false;
+}
+
 bool SpellChecker::known(const QString& lower) const
 {
-    return m_words.contains(lower) || m_user.contains(lower) || m_session.contains(lower);
+    return inDictionary(lower) || m_user.contains(lower) || m_session.contains(lower);
 }
 
 bool SpellChecker::isCorrect(const QString& wordIn)
 {
     ensureLoaded();
-    if (m_words.isEmpty()) return true;            // dictionary missing: never nag
+    if (!m_data) return true;                      // dictionary missing: never nag
 
     QString w = wordIn;
     w.replace(QChar(0x2019), QLatin1Char('\''));
@@ -102,7 +143,7 @@ QSet<QString> SpellChecker::edits1(const QString& w) const
 QStringList SpellChecker::suggest(const QString& wordIn, int maxSuggestions)
 {
     ensureLoaded();
-    if (m_words.isEmpty()) return {};
+    if (!m_data) return {};
 
     QString word = wordIn;
     word.replace(QChar(0x2019), QLatin1Char('\''));
@@ -114,13 +155,17 @@ QStringList SpellChecker::suggest(const QString& wordIn, int maxSuggestions)
     QSet<QString> seen;
 
     const QSet<QString> e1 = edits1(lower);
+    const auto suggestable = [this](const QString& c) {
+        bool ns = false;
+        return inDictionary(c, &ns) && !ns;
+    };
     for (const QString& c : e1)
-        if (m_words.contains(c) && !m_noSuggest.contains(c) && !seen.contains(c)) { seen.insert(c); cands.append(Cand{c, 1}); }
+        if (suggestable(c) && !seen.contains(c)) { seen.insert(c); cands.append(Cand{c, 1}); }
 
     if (cands.size() < 3 && lower.size() <= 12) {            // two edits away, only when needed
         for (const QString& a : e1) {
             for (const QString& c : edits1(a))
-                if (m_words.contains(c) && !m_noSuggest.contains(c) && !seen.contains(c)) { seen.insert(c); cands.append(Cand{c, 2}); }
+                if (suggestable(c) && !seen.contains(c)) { seen.insert(c); cands.append(Cand{c, 2}); }
             if (cands.size() > 200) break;
         }
     }

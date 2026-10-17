@@ -1,0 +1,48 @@
+/*
+ * @name        Catppuccin Latte
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        light
+ * @description Soothing pastel theme, the lightest Catppuccin flavour.
+ * @credits     Palette inspired by Catppuccin (MIT), https://catppuccin.com
+ */
+
+:root {
+  /* Interface */
+  --window: #dce0e8;
+  --panel: #e6e9ef;
+  --base: #eff1f5;
+  --text: #4c4f69;
+  --text-dim: #7a7d92;
+  --border: #c7cad4;
+  --accent: #1e66f5;
+  --accent-text: #ffffff;
+  --hover: #beccea;
+  --pressed: #9fb9ec;
+  --selection: #cdd5f0;
+  --scroll-handle: #bfc3cf;
+
+  /* Editor */
+  --line-highlight: #e2e9f5;
+  --gutter-bg: #eff1f5;
+  --gutter-fg: #878a9b;
+  --gutter-active: #4c4f69;
+  --find-match: #ccaa80;
+
+  /* Syntax */
+  --keyword: #8839ef;
+  --type: #a15e0b;
+  --string: #2f7d1f;
+  --number: #bb490a;
+  --comment: #7c7f93;
+  --preproc: #b83794;
+  --function: #1d62eb;
+
+  /* Status */
+  --error: #d20f39;
+  --warning: #a8620b;
+  --success: #2f7d1f;
+  --git-added: #2f7d1f;
+  --git-modified: #0b7fb5;
+  --git-deleted: #d20f39;
+}

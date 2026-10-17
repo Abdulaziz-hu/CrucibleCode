@@ -1,0 +1,48 @@
+/*
+ * @name        Rosé Pine
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description All natural pine, faux fur and a bit of soho vibes.
+ * @credits     Palette inspired by Rosé Pine (MIT), https://rosepinetheme.com
+ */
+
+:root {
+  /* Interface */
+  --window: #14121f;
+  --panel: #1f1d2e;
+  --base: #191724;
+  --text: #e0def4;
+  --text-dim: #868496;
+  --border: #3e3c4e;
+  --accent: #c4a7e7;
+  --accent-text: #191724;
+  --hover: #323042;
+  --pressed: #72628a;
+  --selection: #403d52;
+  --scroll-handle: #454352;
+
+  /* Editor */
+  --line-highlight: #24222f;
+  --gutter-bg: #191724;
+  --gutter-fg: #777586;
+  --gutter-active: #c2c0d5;
+  --find-match: #765e47;
+
+  /* Syntax */
+  --keyword: #c4a7e7;
+  --type: #9ccfd8;
+  --string: #f6c177;
+  --number: #ea9a97;
+  --comment: #7b7794;
+  --preproc: #eb6f92;
+  --function: #ebbcba;
+
+  /* Status */
+  --error: #eb6f92;
+  --warning: #f6c177;
+  --success: #8bd5b5;
+  --git-added: #8bd5b5;
+  --git-modified: #9ccfd8;
+  --git-deleted: #eb6f92;
+}

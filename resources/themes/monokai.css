@@ -1,0 +1,48 @@
+/*
+ * @name        Monokai
+ * @author      CrucibleCode
+ * @version     1.0.0
+ * @type        dark
+ * @description The classic warm dark scheme with a hot pink and lime palette.
+ * @credits     Palette inspired by Monokai by Wimer Hazenberg
+ */
+
+:root {
+  /* Interface */
+  --window: #1e1f1c;
+  --panel: #2e2f28;
+  --base: #272822;
+  --text: #f8f8f2;
+  --text-dim: #9a9a94;
+  --border: #4e4f48;
+  --accent: #a6e22e;
+  --accent-text: #272822;
+  --hover: #42433c;
+  --pressed: #6a882b;
+  --selection: #49483e;
+  --scroll-handle: #52534f;
+
+  /* Editor */
+  --line-highlight: #32332d;
+  --gutter-bg: #272822;
+  --gutter-fg: #898a84;
+  --gutter-active: #d9d9d3;
+  --find-match: #815721;
+
+  /* Syntax */
+  --keyword: #fa4989;
+  --type: #66d9ef;
+  --string: #e6db74;
+  --number: #ae81ff;
+  --comment: #7e7a63;
+  --preproc: #fd971f;
+  --function: #a6e22e;
+
+  /* Status */
+  --error: #f92f78;
+  --warning: #fd971f;
+  --success: #a6e22e;
+  --git-added: #a6e22e;
+  --git-modified: #66d9ef;
+  --git-deleted: #f92672;
+}
