@@ -29,6 +29,7 @@
 
 #ifdef CRUCIBLE_HAVE_KSYNTAX
 #include <KSyntaxHighlighting/Definition>
+#include <KSyntaxHighlighting/Format>
 #include <KSyntaxHighlighting/Repository>
 #include <KSyntaxHighlighting/SyntaxHighlighter>
 #include <KSyntaxHighlighting/Theme>
@@ -39,6 +40,41 @@ static KSyntaxHighlighting::Repository& syntaxRepository()
 {
     static KSyntaxHighlighting::Repository repo;
     return repo;
+}
+
+// KSyntaxHighlighting skips "normal" text (leaving it to the widget palette) and, with a theme that is
+// missing or does not match ours, can return transparent or background-coloured text. This subclass gives
+// every run an explicit, opaque foreground and falls back to the editor text colour when the theme colour
+// would be unreadable on the editor background.
+namespace {
+class SafeSyntaxHighlighter : public KSyntaxHighlighting::SyntaxHighlighter {
+public:
+    using KSyntaxHighlighting::SyntaxHighlighter::SyntaxHighlighter;
+protected:
+    void applyFormat(int offset, int length, const KSyntaxHighlighting::Format& format) override
+    {
+        if (length <= 0) return;
+        const ThemeColors& tc = ThemeManager::instance().colors();
+        const QColor text(tc.text);
+        const QColor base(tc.base);
+
+        QTextCharFormat tf;
+        QColor fg = text;
+        if (format.hasTextColor(theme())) {
+            QColor c = format.textColor(theme());
+            if (c.isValid() && c.alpha() > 0) {
+                c.setAlpha(255);
+                if (qAbs(c.lightness() - base.lightness()) >= 60) fg = c;   // readable on our background
+            }
+        }
+        tf.setForeground(fg);
+        if (format.isBold(theme()))          tf.setFontWeight(QFont::Bold);
+        if (format.isItalic(theme()))        tf.setFontItalic(true);
+        if (format.isUnderline(theme()))     tf.setFontUnderline(true);
+        if (format.isStrikeThrough(theme())) tf.setFontStrikeOut(true);
+        setFormat(offset, length, tf);
+    }
+};
 }
 #endif
 
@@ -313,7 +349,13 @@ void CodeEditor::applyTheme()
     p.setColor(QPalette::Base, c.base);
     p.setColor(QPalette::Text, c.text);
     p.setColor(QPalette::Highlight, c.selection);
-    p.setBrush(QPalette::HighlightedText, QBrush(Qt::NoBrush)); // keep syntax colors when selected
+    // Selected text needs a real, opaque colour. A NoBrush HighlightedText made the text invisible on newer
+    // Qt 6 versions (e.g. Qt 6.9+ on Arch / CachyOS): the whole selection showed as an empty highlighted block.
+    p.setColor(QPalette::Highlight, c.selection);
+    p.setColor(QPalette::HighlightedText, c.text);
+    p.setColor(QPalette::Active,   QPalette::HighlightedText, c.text);
+    p.setColor(QPalette::Inactive, QPalette::HighlightedText, c.text);
+    p.setColor(QPalette::Inactive, QPalette::Highlight, c.selection);
     setPalette(p);
     updateHighlighter();
     highlightCurrentLine();
@@ -358,7 +400,7 @@ void CodeEditor::updateHighlighter()
         KSyntaxHighlighting::Repository& repo = syntaxRepository();
         const auto def = repo.definitionForFileName(m_path);
         if (def.isValid()) {
-            auto* h = new KSyntaxHighlighting::SyntaxHighlighter(document());
+            auto* h = new SafeSyntaxHighlighter(document());
             h->setDefinition(def);
             h->setTheme(repo.defaultTheme(ThemeManager::instance().isDark()
                             ? KSyntaxHighlighting::Repository::DarkTheme

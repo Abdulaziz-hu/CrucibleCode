@@ -2,6 +2,15 @@
 
 Repository: https://github.com/Abdulaziz-hu/CrucibleCode
 
+## 0.9.3
+- Fixed: build error with system KSyntaxHighlighting (missing `Format` include); carries the 0.9.2 text-visibility fix below
+
+## 0.9.2
+- **Fixed: editor text invisible unless selected (CachyOS / Arch, newer Qt 6 + system KSyntaxHighlighting)**: plain and syntax-coloured text now always gets an explicit, opaque foreground colour instead of relying on the widget palette or on the KSyntaxHighlighting theme. If a theme colour is missing, transparent or too close to the editor background, the theme's text colour is used. Applies to the KSyntaxHighlighting and the built-in highlighters
+
+## 0.9.1
+- **Fixed: selected text invisible (CachyOS / Arch, Qt 6.9+)**: selected text was painted with an empty brush. It now uses a real, opaque theme colour (`HighlightedText`, active and inactive), and the editor style sheet sets `color` and `selection-color` explicitly
+
 ## 0.9.0
 - **Theme Marketplace** (View > Theme, Settings > General): community themes are fetched from https://github.com/Abdulaziz-hu/CrucibleCode-Themes (`index.json` + `themes/<id>.css`). Search, filter dark / light, **live preview** before installing, **Install / Uninstall / Apply / Unapply / Update**, install from a `.css` file, open the themes folder. The list is cached for offline use
 - **21 new built-in themes**: Crucible Ember, Midnight Blue, Forest Night, Dracula, Nord, Monokai, One Dark, Tokyo Night, Catppuccin Mocha / Latte, Gruvbox Dark / Light, Solarized Dark / Light, Rosé Pine, GitHub Dark / Light, Paper Sepia, Arctic Light, High Contrast Dark / Light (`tools/make_themes.py` generates them with a readability check)

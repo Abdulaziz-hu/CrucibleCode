@@ -397,6 +397,14 @@ void SyntaxHighlighter::highlightMarkdown(const QString& text)
 
 void SyntaxHighlighter::highlightBlock(const QString& text)
 {
+    // Give every character an explicit, opaque foreground first: plain text must never depend on the
+    // platform palette (on some Qt 6 / KDE setups the palette text colour is not what we set).
+    if (!text.isEmpty()) {
+        QTextCharFormat plain;
+        plain.setForeground(QColor(ThemeManager::instance().colors().text));
+        setFormat(0, int(text.size()), plain);
+    }
+
     if (m_lang.markdown) {
         highlightMarkdown(text);
         return;

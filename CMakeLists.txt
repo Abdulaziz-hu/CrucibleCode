@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(CrucibleCode
-    VERSION 0.9.0
+    VERSION 0.9.3
     DESCRIPTION "CrucibleCode - a lightweight cross-platform IDE for C, C++ and C# built on Qt 6"
     HOMEPAGE_URL "https://github.com/Abdulaziz-hu/CrucibleCode"
     LANGUAGES CXX)

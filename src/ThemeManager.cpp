@@ -331,7 +331,7 @@ QComboBox QAbstractItemView { background: %panel%; border: 1px solid %border%;
 QCheckBox { spacing: 5px; }
 
 /* ---- editor & views ---- */
-QPlainTextEdit, QTextEdit { background: %base%; border: 1px solid %border%; selection-background-color: %selection%; }
+QPlainTextEdit, QTextEdit { background: %base%; color: %text%; border: 1px solid %border%; selection-background-color: %selection%; selection-color: %text%; }
 QPlainTextEdit#codeEditor { border: 0px; }
 QTreeView, QTreeWidget, QTableView, QListView { background: %base%; border: 1px solid %border%; outline: 0; alternate-background-color: %base%; }
 QTreeView::item, QTreeWidget::item { padding: 1px 0px; border: 0px; }
